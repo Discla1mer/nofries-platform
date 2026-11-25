@@ -43,7 +43,7 @@ test('counts saved Unknown separately from Not applicable and uses human questio
     expect(section(dom).textContent).toContain('2 saved Unknown answers · 1 saved Not applicable answer.');
     expect(section(dom).textContent).toContain('Saved answer: Not applicable. Confirm whether this applies to the assessment scope.');
     expect(section(dom).textContent).not.toContain('awaiting review');
-    expect(section(dom).textContent).toContain('not unanswered questions or a risk score');
+    expect(section(dom).textContent).not.toContain('not unanswered questions or a risk score');
     expect(section(dom).querySelectorAll('li')).toHaveLength(3);
     expect(section(dom).querySelectorAll('h4').map(item => item.textContent)).toEqual(dom.fixtures.metadata.questions.slice(0, 3).map(row => row.prompt));
     expect(dom.root.querySelectorAll('.picture-follow-up')).toHaveLength(1);
@@ -54,7 +54,7 @@ test('counts saved Unknown separately from Not applicable and uses human questio
 
 test('view without a host plan callback is honest and cannot be enabled by mutating options', async () => {
     const dom = setup(); await flush();
-    expect(section(dom).textContent).toContain('This view only lists information needs. Use the questions above to agree who will find the information and when to review it. No requests have been created or sent.');
+    expect(section(dom).textContent).not.toContain('This view only lists information needs');
     expect(action(dom)).toBeNull();
     dom.config.openImprovement = jest.fn(); refresh(dom); await flush();
     expect(action(dom)).toBeNull(); expect(dom.config.openImprovement).not.toHaveBeenCalled(); dom.controller.destroy();
@@ -79,7 +79,7 @@ test('explicit open hands off only the exact validated submission without writes
 test('no suggested requests offers no create shortcut or claim of verified controls', async () => {
     const dom = setup([submitted('assessment-information', [])], { openImprovement: jest.fn() }); await flush();
     expect(section(dom).textContent).toContain('0 saved Unknown answers · 0 saved Not applicable answers.');
-    expect(section(dom).textContent).toContain('This does not verify that controls are effective.');
+    expect(section(dom).textContent).toContain('No information requests are suggested by these saved answers.');
     expect(action(dom)).toBeNull(); dom.controller.destroy();
 });
 

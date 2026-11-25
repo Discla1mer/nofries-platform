@@ -187,9 +187,9 @@
         // saved declaration is unchanged and remains the compared value.
         function scopeText(description) {
             const lines = String(description).split(/\r?\n/).map(line => line.trim().replace(/^[-*\u2022]\s+/, '')).filter(Boolean);
-            if (lines.length < 2) return node('p', 'ncsc-preserve-text', description);
             const list = node('ul', 'ncsc-scope-list');
-            lines.forEach(line => list.append(node('li', 'ncsc-preserve-text', line)));
+            list.setAttribute('role', 'list');
+            (lines.length ? lines : [description]).forEach(line => list.append(node('li', 'dashboard-badge ncsc-preserve-text', line)));
             return list;
         }
         // One live region for the whole view, kept across repaints so screen
@@ -269,7 +269,7 @@
             const provenance = node('details', 'ncsc-result-provenance');
             provenance.append(node('summary', '', 'Source and calculation details'));
             const dl = node('dl');
-            const facts = [['Organisation name', organisationName], ['Saved at', detail.updatedAt],
+            const facts = [['Organisation name', organisationName],
                 ['Saved status', detail.status], ['Saved revision', String(detail.revision)],
                 ['Framework', selectedMetadata().title], ['Profile version', selectedMetadata().profileRef.profileVersion],
                 ['Organisation', organisationId], ['Assessment', detail.assessmentId]];
@@ -290,10 +290,9 @@
             const progress = node('progress', 'ncsc-saved-progress');
             progress.max = detail.progress.total; progress.value = detail.progress.answered;
             progress.setAttribute('aria-label', 'Saved responses');
-            const scope = node('section', 'picture-scope');
+            const scope = node('section', 'picture-scope scope-copy');
             scope.append(node('h3', '', 'Scope'), scopeText(detail.scopePopulation.description), node('p', 'dashboard-muted', 'Scope is fixed when an assessment starts. If it is wrong, start a new assessment with the corrected scope.'));
-            draft.append(heading, saved, progress, scope,
-                node('p', 'dashboard-muted', 'Saved progress is not a score. Submit this assessment when it is ready; unknown answers remain visible as uncertainty.'));
+            draft.append(heading, saved, progress, scope);
             root.append(draft);
         }
         function render() { paint(); placeActions(); }
@@ -387,8 +386,7 @@
             const isEmpty = !loading && !rows.length && loaded && !message && !selected && after === null;
             if (!isEmpty) {
                 const header = node('header', 'picture-heading');
-                header.append(node('h2', '', 'Cyber baseline'),
-                    node('p', 'dashboard-muted', 'A saved assessment of the selected scope, not a live check of connected systems.'));
+                header.append(node('h2', '', 'Cyber baseline'));
                 root.prepend(header);
             }
             // After loading, the status stays in place but only for screen readers.
@@ -438,8 +436,9 @@
                     const ambiguous = referenceCounts.get(JSON.stringify([label, reference])) > 1;
                     const suffix = duplicate ? ' · ' + (ambiguous ? row.assessmentId
                         : reference + (row.assessmentId.length > 8 ? '…' : '')) : '';
-                    const item = node('option', '', label + suffix);
-                    item.title = label + suffix;
+                    const caption = detail && row.assessmentId === detail.assessmentId ? 'Selected · ' + pictureStatus(row) : label;
+                    const item = node('option', '', caption + suffix);
+                    item.title = caption + suffix;
                     item.value = row.assessmentId; picker.append(item);
                 });
                 picker.value = selected;
@@ -449,7 +448,6 @@
                 const refresh = button('Refresh', () => load(false)); refresh.disabled = loading;
                 refresh.classList.add('dashboard-button-secondary');
                 toolbar.append(label, picker, refresh);
-                if (chosen) toolbar.append(node('p', 'picture-selected-title', chosen.title));
                 if (after !== null) { const more = button('Load more', () => load(true)); more.disabled = loading; more.classList.add('dashboard-button-secondary'); toolbar.append(more); }
                 root.append(toolbar);
                 if (after !== null) root.append(node('p', 'dashboard-muted', 'More saved assessments are available. Load more to see them.'));
@@ -494,7 +492,7 @@
             if (detail.status !== 'submitted') {
                 root.append(sourceDetails()); return;
             }
-            const scope = node('section', 'picture-scope');
+            const scope = node('section', 'picture-scope scope-copy');
             scope.append(node('h3', '', 'Scope'), scopeText(detail.scopePopulation.description), node('p', 'dashboard-muted', 'Scope is fixed when an assessment starts. If it is wrong, start a new assessment with the corrected scope.')); root.append(scope);
             const result = questionnaire.resultModel(detail, selectedMetadata(), organisationId);
             if (!result) { root.append(node('p', 'ncsc-warning', 'Results are unavailable for this saved submission. No score has been inferred.'), sourceDetails()); return; }
@@ -508,7 +506,7 @@
                 });
                 root.append(action);
             }
-            renderResult(result);
+            const attribution = renderResult(result);
             if (explanation && typeof explanation.mount === 'function') {
                 const child = node('section', 'picture-explanation ncsc-results'); root.append(child);
                 // The explanation is optional. If it cannot start, keep the
@@ -528,6 +526,7 @@
                     child.replaceChildren(node('p', 'ncsc-warning', 'The explanation is unavailable right now. Your results above are unchanged.'));
                 }
             }
+            root.append(attribution);
         }
         const newestFirst = (a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.assessmentId.localeCompare(b.assessmentId);
         // Display-only view over results the validator already accepted. The
@@ -664,9 +663,9 @@
             const list = node('ol', 'picture-trend-history');
             trend.order.forEach(assessmentId => {
                 const point = trend.points.get(assessmentId), row = rows.find(item => item.assessmentId === assessmentId);
-                const item = node('li', '', point ? displayDate(point.submittedAt) + ' · ' + point.attainment + ' reported implementation · ' + point.scope
+                const item = node('li', '', assessmentId === detail.assessmentId ? 'Selected assessment' : point ? displayDate(point.submittedAt) + ' · ' + point.attainment + ' reported implementation · ' + point.scope
                     : displayDate(row.updatedAt) + ' · Result unavailable');
-                if (assessmentId === detail.assessmentId) { item.append(node('strong', '', '(shown above)')); item.setAttribute('aria-current', 'true'); }
+                if (assessmentId === detail.assessmentId) item.setAttribute('aria-current', 'true');
                 list.append(item);
             });
             section.append(list);
@@ -677,6 +676,9 @@
         function gapSection(result) {
             const section = questionnaire.rankedGapSection(node, result, selectedMetadata(), id + '-top-gaps',
                 gap => planGap && improvementSelection() ? gapPlanControls(gap) : [], displayedGaps);
+            for (const owner of section.querySelectorAll('.picture-gap-owner')) {
+                if (owner.textContent === 'Ask your IT provider to help with this.') owner.remove();
+            }
             if (section.querySelector('ol')) section.append(helpPanel());
             return section;
         }
@@ -694,10 +696,9 @@
             const unknown = questions.filter(question => question.responseOptionId === 'unknown').length;
             const pending = questions.length - unknown;
             section.append(node('p', '', unknown + ' saved Unknown ' + (unknown === 1 ? 'answer' : 'answers') +
-                ' · ' + pending + ' saved Not applicable ' + (pending === 1 ? 'answer' : 'answers') + '.'),
-                node('p', 'dashboard-muted', 'These are saved answers to confirm, not unanswered questions or a risk score.'));
+                ' · ' + pending + ' saved Not applicable ' + (pending === 1 ? 'answer' : 'answers') + '.'));
             if (!questions.length) {
-                section.append(node('p', '', 'No information requests are suggested by these saved answers. This does not verify that controls are effective.'));
+                section.append(node('p', '', 'No information requests are suggested by these saved answers.'));
                 return section;
             }
             const list = node('ul', 'picture-information-list');
@@ -717,7 +718,7 @@
                 });
                 section.append(node('p', 'dashboard-muted', 'Opening the plan creates or sends nothing. An authorised editor must choose Create improvement plan for this assessment to save requests. This may also create other recommended actions.'), action,
                     node('p', 'dashboard-muted', 'Use the plan to agree who will find the information and when. Completing an action does not approve a Not applicable answer, verify a control or change assessment scores.'));
-            } else section.append(node('p', 'dashboard-muted', 'This view only lists information needs. Use the questions above to agree who will find the information and when to review it. No requests have been created or sent.'));
+            }
             return section;
         }
         // "Plan this" asks the host to open the improvement editor at this gap's
@@ -758,7 +759,12 @@
             const panel = node('div', 'picture-next-steps'), token = epoch;
             panel.append(node('h4', '', 'Next step'));
             if (typeof questionnaire.providerSummary === 'function' && typeof questionnaire.copySummary === 'function') panel.append(summaryHandoff());
-            panel.append(questionnaire.managedSecurityOffer(node, gated, doc.defaultView, () => live(token)));
+            const offer = questionnaire.managedSecurityOffer(node, gated, doc.defaultView, () => live(token));
+            // The shared offer also serves the questionnaire. Keep its gated actions intact.
+            const contactNote = Array.from(offer.children).find(child => child.classList.contains('dashboard-muted') &&
+                child.textContent.startsWith('Opens the contact form'));
+            if (contactNote) contactNote.remove();
+            panel.append(offer);
             // #409: present only when the host negotiated contact requests.
             if (contactControl) panel.append(contactControl());
             return panel;
@@ -874,7 +880,7 @@
             value.textContent = model.lowerDisplay + ' in place';
             card.replaceChildren(card.querySelector('h3'), value,
                 node('p', 'picture-metric-upper', 'Up to ' + model.upperDisplay + ' if every answer still to confirm turns out to be in place.'),
-                node('p', '', 'The first figure is what you reported as in place. The higher figure adds answers still to confirm: Unknown, and Not applicable. It is not a performance score.'));
+                node('p', '', 'The first figure is what you reported as in place. The higher figure adds answers still to confirm: Unknown, and Not applicable.'));
         }
         function renderResult(result) {
             const profile = selectedMetadata(), v2 = v2Profile(profile);
@@ -886,7 +892,7 @@
                 card.append(node('h3', '', label), node('strong', 'picture-large', value), node('p', '', copyText)); metrics.append(card); return card;
             }
             const awaitingReview = result.pending + (result.pending === 1 ? ' answer' : ' answers') + ' marked not applicable, to confirm';
-            const rangeHelp = 'The lower figure is what you reported as in place. The higher figure includes unknown answers and answers marked not applicable, to confirm. It is not a performance score.';
+            const rangeHelp = 'The lower figure is what you reported as in place. The higher figure includes unknown answers and answers marked not applicable, to confirm.';
             // A submitted result is read-only, so do not ask the customer to confirm answers here.
             const implementationMetric = questionnaire.enoughAnswersToEstimate(result)
                 ? metric('Reported implementation', result.attainment, rangeHelp, true)
@@ -894,9 +900,18 @@
                     ' answers are Yes, Partial or No. Most answers are Unknown or Not applicable, so the range is too wide to be useful. Range so far: ' + result.attainment + '. ' +
                     (typeof options.openCyber === 'function' ? 'Start a new assessment once more answers are known. ' : '') + rangeHelp, true);
             const completionMetric = metric('Answers confirmed', result.completion, result.completed + ' of ' + result.total + ' questions have a yes, partial or no response. ' + result.unknown + ' still to confirm, including ' + awaitingReview + '. All ' + detail.progress.answered + ' responses are saved; submission does not mean all controls are implemented.');
-            root.append(metrics, informationSection(result));
+            const calculation = node('details', 'picture-calculation');
+            const summary = node('summary', '', 'How the implementation range is calculated');
+            summary.id = id + '-reading-guide';
+            const guide = node('a', '', 'How to read this'); guide.href = '#' + summary.id;
+            guide.addEventListener('click', event => {
+                event.preventDefault();
+                if (!live() || !root.contains(guide)) return;
+                calculation.open = true; summary.focus();
+            });
+            root.append(guide, metrics, informationSection(result));
             const domains = node('section', 'picture-domains');
-            domains.append(node('h3', '', 'Implementation by NCSC function'), node('p', 'dashboard-muted', 'Solid bars show what you reported as in place. The striped extension shows answers still to confirm. The range is not a performance score.'));
+            domains.append(node('h3', '', 'Implementation by NCSC function'), node('p', 'dashboard-muted', 'Solid bars show what you reported as in place. The striped extension shows answers still to confirm.'));
             leadWithLowerBound(implementationMetric, result);
             result.domains.forEach(domain => {
                 const row = node('div', 'picture-domain');
@@ -927,11 +942,9 @@
                 const option = node('option', '', domain.title); option.value = domain.id; filter.append(option);
             });
             filter.value = '';
-            const filterHelp = node('p', 'dashboard-muted', 'This filter changes only the follow-up lists. Assessment scores and totals stay unchanged. Refreshing or opening another saved assessment resets the filter.');
-            filterHelp.id = filter.id + '-help'; filter.setAttribute('aria-describedby', filterHelp.id);
             const filterStatus = node('p', 'picture-follow-up-status dashboard-muted', 'Showing all functions.');
             filterStatus.setAttribute('role', 'status'); filterStatus.setAttribute('aria-live', 'polite');
-            filterToolbar.append(filterLabel, filter); follow.append(filterToolbar, filterHelp, filterStatus);
+            filterToolbar.append(filterLabel, filter); follow.append(filterToolbar, filterStatus);
             const domainByControl = new Map(profile.controls.map(control => [control.id, control.domainId]));
             const domainByQuestion = new Map(profile.questions.map(question => [question.id, domainByControl.get(question.controlId)]));
             const indexed = new Map(result.domains.flatMap(domain => domain.controls.flatMap(control =>
@@ -1016,26 +1029,20 @@
                 if (filter.value && !domain) return;
                 renderFilter(domain);
             });
-            follow.append(node('p', 'dashboard-muted', 'A question can appear in more than one category. Counts are not a combined total or a risk ranking. Questions follow the profile order.'));
             root.append(follow);
-            const limits = node('section', 'picture-limitations');
-            limits.append(node('h3', '', 'How to read this picture'), node('p', '',
-                'Risk priority: not calculated. Change over time compares submitted answers only; it is not a risk trend. A high implementation score does not establish control effectiveness or low business risk.'),
-                node('p', '', 'This is a self-reported gap assessment, not an audit, assurance opinion or certification. Reports and findings must be reviewed and linked before they can support evidence confidence.'));
-            root.append(limits);
-            const calculation = node('details', 'picture-calculation');
-            calculation.append(node('summary', '', 'How the implementation range is calculated'), v2
+            calculation.append(summary, node('p', '', 'This self-reported assessment helps you plan improvements. It does not establish risk priority, control effectiveness, audit assurance or certification.'), v2
                 // v2 (#399): weighted questions and graded credit, held in hundredths.
                 ? node('p', '', 'Each question has a weight of 1, 2 or 3. Your answer earns all, part or none of that weight: Yes, in place and checked earns all of it, Partly in place half, Sometimes but not written down or checked a quarter, and No nothing. The extra login method question earns part of its weight by method. I don\'t know, missing and Not applicable answers earn nothing in the lower figure and all of the weight in the upper figure.')
                 : node('p', '', 'No Fries gives each question equal weight: Yes = 1, Partial = 0.5 and No = 0. Unknown, missing and Not applicable answers contribute 0 to the lower figure and 1 to the higher figure. A Not applicable answer stays in the count. There is no review that takes it out.'),
                 node('p', '', 'This saved result: ' + (v2 ? result.lowerCreditUnits / 100 : result.lowerCreditUnits / 2) + '–' + (v2 ? result.upperCreditUnits / 100 : result.upperCreditUnits / 2) + ' reported or possible credits ÷ ' + result.denominatorWeight + ' included question weights × 100 = ' + result.attainment + '. Percentages are rounded to one decimal place.'),
-                node('p', '', 'The overall result weights questions, not the five function percentages. Functions contain different numbers of questions. This is a No Fries implementation measure based on selected NCSC guidance, not an NCSC score or certification. Evidence and confidence do not increase this implementation measure.'),
-                ...(v2 ? [node('p', '', 'This is a No Fries planning score from your answers, not an official NCSC or CS-CMM rating.')] : []));
+                node('p', '', 'The overall result weights questions across the five functions. Each function contains a different number of questions. Evidence and confidence do not increase this measure.'));
             root.append(calculation);
             root.append(sourceDetails());
-            const attribution = node('p', 'dashboard-muted', profile.attribution);
+            const attribution = node('footer', 'dashboard-muted');
             const licence = node('a', '', 'CC BY 4.0'); licence.href = 'https://creativecommons.org/licenses/by/4.0/';
-            attribution.append(licence); root.append(attribution);
+            const [credit, changes] = profile.attribution.split('CC BY 4.0');
+            attribution.append(node('span', '', credit), licence, node('span', '', changes || ''));
+            return attribution;
         }
         async function load(append, firstPaint) {
             if (!live() || denied || loading) return;

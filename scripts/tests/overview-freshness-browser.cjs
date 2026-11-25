@@ -72,9 +72,11 @@ const server = http.createServer((req, res) => {
             });
             await page.goto(base);
             await page.locator('.picture-metrics').waitFor();
-            assert.match(await page.locator('.picture-heading').textContent(), /not a live check of connected systems/);
+            const guide = page.getByRole('link', { name: 'How to read this', exact: true });
+            await guide.focus(); await page.keyboard.press('Enter');
+            assert.equal(await page.locator('.picture-calculation > summary').evaluate(node => node === document.activeElement && node.parentElement.open), true);
             assert.match(await page.locator('#picture').textContent(), /Refresh reloads saved assessments/);
-            assert.match(await page.locator('.picture-metrics').textContent(), /Coverage recorded in this saved assessment/);
+            assert.match(await page.locator('.picture-metrics').textContent(), /All 14 responses are saved/);
             const source = await page.locator('.picture-source').textContent();
             const metrics = await page.locator('.picture-metrics').textContent();
             for (const label of ['Refresh', 'Load more']) {
