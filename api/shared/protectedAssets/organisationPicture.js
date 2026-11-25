@@ -136,6 +136,56 @@
         const draft = newestRow(list.filter(row => row.status !== 'submitted'));
         return draft ? draft.assessmentId : '';
     }
+    // Chart kit (#604): small SVG charts drawn with presentation attributes only,
+    // so they work under the dashboard CSP (no inline styles, no libraries).
+    // Builders return plain specs; draw() turns a spec into DOM nodes.
+    const CHART_TONES = Object.freeze({ solid: '#65470d', partial: '#dbb157', no: '#8a2b21', unknown: '#b9ae9b', track: '#e2d9c7', ink: '#17140f' });
+    const clampPercent = value => { const number = Number(value); return Number.isFinite(number) ? Math.min(100, Math.max(0, number)) : 0; };
+    const svgNode = (tag, attrs, children) => ({ tag, attrs: attrs || {}, children: children || [] });
+    // Half-circle gauge: the reported figure is solid; the "up to" figure adds a hatched band.
+    function gaugeSpec(lower, upper, label) {
+        const low = clampPercent(lower), high = Math.max(low, clampPercent(upper)), id = 'nf-chart-hatch';
+        const arc = 'M24 120 A96 96 0 0 1 216 120', angle = Math.PI * (1 - low / 100);
+        const tip = [120 + 70 * Math.cos(angle), 120 - 70 * Math.sin(angle)].map(value => Math.round(value * 10) / 10);
+        return svgNode('svg', { viewBox: '0 0 240 132', class: 'nf-chart nf-chart-gauge', role: 'img', 'aria-label': label }, [
+            svgNode('defs', {}, [svgNode('pattern', { id, width: 6, height: 6, patternUnits: 'userSpaceOnUse', patternTransform: 'rotate(45)' },
+                [svgNode('rect', { width: 3, height: 6, fill: CHART_TONES.partial })])]),
+            svgNode('path', { d: arc, fill: 'none', stroke: CHART_TONES.track, 'stroke-width': 20, 'stroke-linecap': 'round', pathLength: 100 }),
+            svgNode('path', { d: arc, fill: 'none', stroke: 'url(#' + id + ')', 'stroke-width': 20, pathLength: 100,
+                'stroke-dasharray': (high - low) + ' 100', 'stroke-dashoffset': String(-low), 'data-band': 'upper' }),
+            svgNode('path', { d: arc, fill: 'none', stroke: CHART_TONES.solid, 'stroke-width': 20, pathLength: 100,
+                'stroke-dasharray': low + ' 100', 'data-band': 'lower' }),
+            svgNode('line', { x1: 120, y1: 120, x2: tip[0], y2: tip[1], stroke: CHART_TONES.ink, 'stroke-width': 4, 'stroke-linecap': 'round' }),
+            svgNode('circle', { cx: 120, cy: 120, r: 8, fill: CHART_TONES.ink })
+        ]);
+    }
+    // Donut of answer counts; segments with no answers are left out.
+    function donutSpec(segments, centre, label) {
+        const total = segments.reduce((sum, segment) => sum + Math.max(0, segment.value || 0), 0);
+        let offset = 0;
+        const rings = total ? segments.filter(segment => segment.value > 0).map(segment => {
+            const share = segment.value / total * 100, ring = svgNode('circle', { cx: 80, cy: 80, r: 60, fill: 'none', stroke: CHART_TONES[segment.tone],
+                'stroke-width': 22, pathLength: 100, 'stroke-dasharray': Math.round(share * 100) / 100 + ' 100', 'stroke-dashoffset': String(-Math.round(offset * 100) / 100),
+                transform: 'rotate(-90 80 80)', 'data-tone': segment.tone });
+            offset += share; return ring;
+        }) : [];
+        return svgNode('svg', { viewBox: '0 0 160 160', class: 'nf-chart nf-chart-donut', role: 'img', 'aria-label': label }, [
+            svgNode('circle', { cx: 80, cy: 80, r: 60, fill: 'none', stroke: CHART_TONES.track, 'stroke-width': 22 }), ...rings,
+            svgNode('text', { x: 80, y: 88, 'text-anchor': 'middle', 'font-size': 28, 'font-weight': 600, fill: CHART_TONES.ink }, [String(centre)])
+        ]);
+    }
+    function draw(doc, spec) {
+        if (typeof spec === 'string') return doc.createTextNode ? doc.createTextNode(spec) : spec;
+        const element = typeof doc.createElementNS === 'function' ? doc.createElementNS('http://www.w3.org/2000/svg', spec.tag) : doc.createElement(spec.tag);
+        Object.keys(spec.attrs).forEach(key => element.setAttribute(key, String(spec.attrs[key])));
+        spec.children.forEach(child => { if (typeof child === 'string') element.textContent = child; else element.append(draw(doc, child)); });
+        if (spec.attrs.role === 'img') element.setAttribute('focusable', 'false');
+        return element;
+    }
+    function afterHeading(card, element) {
+        const children = Array.from(card.children); card.replaceChildren(children[0], element, ...children.slice(1));
+    }
+    const percentNumber = display => { const match = /^(\d+(?:\.\d+)?)%$/.exec(String(display || '')); return match ? Number(match[1]) : null; };
     function mount(root, options) {
         if (!root || !root.ownerDocument || !options || !options.client ||
             typeof options.client.list !== 'function' || typeof options.client.read !== 'function' ||
@@ -913,6 +963,20 @@
             const domains = node('section', 'picture-domains');
             domains.append(node('h3', '', 'Implementation by NCSC function'), node('p', 'dashboard-muted', 'Solid bars show what you reported as in place. The striped extension shows answers still to confirm.'));
             leadWithLowerBound(implementationMetric, result);
+            const lowerPercent = percentNumber(result.lowerDisplay), upperPercent = percentNumber(result.upperDisplay);
+            if (lowerPercent !== null && upperPercent !== null && questionnaire.enoughAnswersToEstimate(result)) {
+                afterHeading(implementationMetric, draw(doc, gaugeSpec(lowerPercent, upperPercent,
+                    lowerPercent + ' percent in place' + (upperPercent > lowerPercent ? ', up to ' + upperPercent + ' percent once answers are confirmed' : ''))));
+            }
+            const yes = Math.max(0, result.completed - result.partial - result.no), toConfirm = Math.max(0, result.total - result.completed);
+            const answers = node('div', 'picture-answer-mix');
+            const legend = node('ul', 'picture-answer-legend');
+            [['Yes', yes, 'solid'], ['Partial', result.partial, 'partial'], ['No', result.no, 'no'], ['To confirm', toConfirm, 'unknown']].forEach(entry => {
+                const item = node('li', 'picture-answer-' + entry[2], entry[0] + ' · ' + entry[1]); legend.append(item);
+            });
+            answers.append(draw(doc, donutSpec([{ value: yes, tone: 'solid' }, { value: result.partial, tone: 'partial' }, { value: result.no, tone: 'no' }, { value: toConfirm, tone: 'unknown' }],
+                result.total, 'Answers: ' + yes + ' yes, ' + result.partial + ' partial, ' + result.no + ' no, ' + toConfirm + ' to confirm')), legend);
+            afterHeading(completionMetric, answers);
             result.domains.forEach(domain => {
                 const row = node('div', 'picture-domain');
                 const label = node('strong', '', domain.title), value = node('span', '', domain.attainment);
@@ -1135,5 +1199,5 @@
         } else start(null);
         return controller;
     }
-    return Object.freeze({ mount, topGaps, confirmNext, actionSummary, preferredAssessmentId });
+    return Object.freeze({ mount, topGaps, confirmNext, actionSummary, preferredAssessmentId, charts: Object.freeze({ gaugeSpec, donutSpec, draw, percentNumber }) });
 }));
