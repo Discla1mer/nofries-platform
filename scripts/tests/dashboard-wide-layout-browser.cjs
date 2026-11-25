@@ -205,7 +205,7 @@ async function keyboardSkip(page) {
 async function questionnaire(page, base, route, submitted = false) {
     await ready(page, base, route, '#cyber-security');
     const button = page.locator('.ncsc-assessment-list button').filter({ hasText: submitted ? 'submitted' : 'in-progress' }).first();
-    await button.click(); await page.locator(submitted ? '.ncsc-result-metrics' : '.ncsc-question-index').waitFor();
+    await button.click(); await page.locator(submitted ? '.ncsc-result-metrics' : '#ncsc-question-text').waitFor();
 }
 async function overview(page, base, route) {
     await ready(page, base, route);

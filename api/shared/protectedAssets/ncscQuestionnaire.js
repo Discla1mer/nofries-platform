@@ -41,6 +41,13 @@
         mfa_mixed: 'At least one important account still uses a text or email code, even if others use something stronger.',
         mfa_none: 'Important accounts do not ask for an extra login step yet.'
     };
+    const TILE_HINT = {
+        yes: 'In place across your scope.', partial: 'Some parts are in place.', partly: 'Some parts are in place.',
+        no: 'Planned or yet to start.', unknown: 'Not sure? You can check later.', not_applicable: 'Explain why it does not apply.',
+        ad_hoc: 'Occasional and informal.', mfa_key: 'Passkey or physical key.', mfa_number_matching: 'Match a number in an app.',
+        mfa_push: 'Approve an app notification.', mfa_authenticator: 'Enter a code from an app.',
+        mfa_text_code: 'Enter a text or email code.', mfa_mixed: 'Includes text or email codes.', mfa_none: 'No extra sign-in step.'
+    };
     // Display aids only. The accepted catalogue still owns each question and
     // answer meaning; these examples neither choose an answer nor prove it.
     const QUESTION_INPUT_GUIDANCE = {
@@ -796,8 +803,6 @@
         let submitPrompt = false;
         let submitLocked = false;
         let questionRegion;
-        let questionIndex;
-        let pendingPickerChoice = null;
         let questionProgress, progressArc, functionSteps;
         let nextUnanswered;
         let nextUnresolved;
@@ -953,23 +958,14 @@
             return -1;
         }
         function updateQuestionNavigation() {
-            if (!live() || !acknowledged || !questionIndex || !questionProgress) return;
-            const sealed = acknowledged.status === 'submitted';
-            let answered = 0;
-            questions.forEach(function (question, index) {
-                const value = displayedAnswer(question), option = optionById.get(value.optionId);
-                if (value.optionId !== null) answered += 1;
-                const label = value.optionId === 'not_applicable' ? 'Not applicable, to confirm' : option ? option.label : 'Unanswered';
-                const changed = !sealed && !equal(value, savedAnswer(question.id));
-                const unsaved = changed ? ' · Not saved yet' : '';
-                questionIndex.children[index].textContent = (index + 1) + ' of ' + questions.length + ' · ' + label + unsaved;
-            });
+            if (!live() || !acknowledged || !questionProgress) return;
+            const answered = questions.filter(question => displayedAnswer(question).optionId !== null).length;
             const missing = questions.length - answered;
             questionProgress.textContent = answered + ' of ' + questions.length + ' answered · ' +
                 (missing ? 'About ' + missing + ' min left' : 'Complete');
             progressArc.setAttribute('stroke-dasharray', answered + ' ' + missing);
             const control = metadata.controls.find(item => item.id === questions[activeQuestion].controlId);
-            for (const step of functionSteps.children) {
+            for (const step of functionSteps.querySelectorAll('button')) {
                 if (step.dataset.domain === control.domainId) step.setAttribute('aria-current', 'step');
                 else step.removeAttribute('aria-current');
             }
@@ -1105,12 +1101,7 @@
             const observationsOpen = !!(observations && observations.open && acknowledged &&
                 observations.dataset.assessmentId === acknowledged.assessmentId);
             const scrollX = win && win.scrollX, scrollY = win && win.scrollY;
-            // A keyboard choice in the question picker waits for Enter or Go. Keep it
-            // when a save re-renders the page so the choice is not lost.
-            const pickerChoice = questionIndex && acknowledged && questionIndex.value !== String(activeQuestion)
-                ? { assessmentId: acknowledged.assessmentId, value: questionIndex.value } : null;
-            pendingPickerChoice = pickerChoice;
-            questionIndex = null; questionProgress = null; progressArc = null; functionSteps = null; nextUnanswered = null; nextUnresolved = null; questionRegion = null;
+            questionProgress = null; progressArc = null; functionSteps = null; nextUnanswered = null; nextUnresolved = null; questionRegion = null;
             if (!acknowledged || acknowledged.status === 'submitted' || !editable) { reviewing = false; returnToReview = null; }
             // Keep the live region attached so asynchronous updates change an
             // existing accessible status rather than insert prefilled content.
@@ -1487,9 +1478,16 @@
             functionSteps = node('ol', 'ncsc-function-steps');
             functionSteps.setAttribute('aria-label', 'Assessment functions');
             for (const domain of metadata.domains) {
-                const step = node('li', '', domain.title);
+                const item = node('li');
+                const step = button(domain.title, () => {
+                    if (!live(renderedEpoch) || !content.contains(step)) return;
+                    const controls = metadata.controls.filter(control => control.domainId === domain.id);
+                    activeQuestion = questions.findIndex(question => controls.some(control => control.id === question.controlId));
+                    renderAssessmentQuestion();
+                }, 'ncsc-function-step');
+                step.id = 'ncsc-step-' + domain.id;
                 step.dataset.domain = domain.id;
-                functionSteps.append(step);
+                item.append(step); functionSteps.append(item);
             }
             const svg = name => doc.createElementNS('http://www.w3.org/2000/svg', name);
             const ring = svg('svg');
@@ -1504,39 +1502,6 @@
             questionProgress = node('span'); questionProgress.id = 'ncsc-draft-progress';
             const progress = node('div', 'ncsc-focus-progress'); progress.append(ring, questionProgress);
             header.append(functionSteps, progress); content.append(header);
-            const indexLabel = node('label', '', 'Question'); indexLabel.setAttribute('for', 'ncsc-question-index');
-            const index = node('select', 'ncsc-question-index'); index.id = 'ncsc-question-index';
-            index.setAttribute('aria-describedby', 'ncsc-question-index-help');
-            questionIndex = index;
-            questions.forEach(function (_item, i) { const option = node('option', '', (i + 1) + ' of ' + questions.length); option.value = String(i); index.append(option); });
-            const keptChoice = pendingPickerChoice; pendingPickerChoice = null;
-            const keptIndex = keptChoice && keptChoice.assessmentId === acknowledged.assessmentId ? Number(keptChoice.value) : NaN;
-            index.value = String(Number.isInteger(keptIndex) && keptIndex >= 0 && keptIndex < questions.length ? keptIndex : activeQuestion);
-            // A pointer choice opens the question at once. Arrow keys only move the
-            // selection; Enter or Go opens it, so keyboard users do not load every
-            // question on the way.
-            let keyedAt = 0;
-            function openSelected(moveFocus) {
-                const i = Number(index.value);
-                if (!live(renderedEpoch) || !content.contains(index) || !Number.isInteger(i) || i < 0 || i >= questions.length) return;
-                activeQuestion = i; if (moveFocus) renderAssessmentQuestion(); else renderQuestion();
-            }
-            index.addEventListener('keydown', function (event) {
-                if (event.key === 'Enter') { keyedAt = 0; event.preventDefault(); openSelected(true); }
-                // Only keys that can move the selection hold back the change; a
-                // modifier such as Shift must not swallow a later pointer choice.
-                else if (/^(Arrow(Up|Down|Left|Right)|Home|End|PageUp|PageDown)$/.test(event.key) || (event.key && event.key.length === 1)) keyedAt = Date.now();
-            });
-            // A pointer choice always opens at once, even straight after a keystroke.
-            index.addEventListener('pointerdown', function () { keyedAt = 0; });
-            index.addEventListener('mousedown', function () { keyedAt = 0; });
-            index.addEventListener('change', function () { if (Date.now() - keyedAt < 1000) { keyedAt = 0; return; } openSelected(false); });
-            const go = button('Go', function () { openSelected(true); }, 'dashboard-button dashboard-button-secondary ncsc-question-go');
-            go.id = 'ncsc-question-go'; go.setAttribute('aria-label', 'Go to the selected question');
-            const picker = node('div', 'ncsc-question-picker'); picker.append(index, go);
-            content.append(indexLabel, picker);
-            const indexHelp = node('p', 'dashboard-muted', sealed ? 'The full question and your submitted answer are below.' : 'The full question is below.' + (autosaveEnabled && editable ? ' Answers save automatically a moment after each change.' : ''));
-            indexHelp.id = 'ncsc-question-index-help'; content.append(indexHelp);
             questionRegion = node('div', 'ncsc-question'); content.append(questionRegion); renderQuestion();
             controls = node('div', 'ncsc-actions');
             if (editable && !sealed) {
@@ -1547,11 +1512,7 @@
                 save.id = 'ncsc-save'; save.dataset.mutation = 'true';
                 if (!saveStatus) saveStatus = node('p', 'ncsc-save-status'); else saveStatus.remove();
                 saveStatus.id = 'ncsc-save-status'; saveStatus.setAttribute('role', 'status'); saveStatus.setAttribute('aria-live', 'polite'); saveStatus.setAttribute('aria-atomic', 'true');
-                const final = node('section', 'ncsc-final-submission'); final.setAttribute('aria-labelledby', 'ncsc-submit-title');
-                const title = node('h3', '', 'Finish this baseline'); title.id = 'ncsc-submit-title';
-                const consequence = node('p', 'dashboard-muted', 'Check every answer before submitting. Submitting makes this baseline read-only, and your latest answers are saved first. Opening the review does not save or submit anything.'); consequence.id = 'ncsc-submit-consequence';
-                const review = button('Review and submit', openReview, 'dashboard-text-button'); review.setAttribute('aria-describedby', consequence.id);
-                final.append(title, consequence, review); controls.append(save, saveStatus);
+                controls.append(save, saveStatus);
                 controls.addEventListener('pointerdown', function (event) {
                     if (save.disabled && (event.target === save || save.contains(event.target))) event.preventDefault();
                 });
@@ -1559,10 +1520,10 @@
                     const back = button('Return to review', resumeReview, 'dashboard-button dashboard-button-secondary'); back.id = 'ncsc-return-to-review';
                     controls.append(back);
                 }
-                controls.append(final);
+                controls.append(button('Review and submit', openReview, 'dashboard-text-button'));
             }
             content.append(controls);
-            if (!sealed) { content.append(glossary()); renderDraftObservations(observationsOpen); }
+            if (!sealed) renderDraftObservations(observationsOpen);
         }
         // Counts and navigation from acknowledged answers only. Never evaluate a
         // draft, infer a risk ranking, or reuse another assessment's baseline.
@@ -2027,9 +1988,11 @@
             // The worked examples describe the accepted profile's questions and answers only.
             const inputGuidance = isV2(metadata) ? undefined : QUESTION_INPUT_GUIDANCE[question.id];
             const sealed = acknowledged.status === 'submitted';
-            const hint = node('p', 'ncsc-input-guidance', sealed ? 'This is the answer you submitted. Submitted answers cannot be changed.'
-                : question.smallBusiness ? 'Choose one answer for your whole declared scope.' : inputGuidance ? inputGuidance.consider : question.guidance && question.guidance.summary || question.prompt);
-            hint.id = 'ncsc-input-guidance-' + question.id; fieldset.setAttribute('aria-describedby', hint.id); fieldset.append(hint);
+            if (sealed || !question.smallBusiness) {
+                const hint = node('p', 'ncsc-input-guidance', sealed ? 'This is the answer you submitted. Submitted answers cannot be changed.'
+                    : inputGuidance ? inputGuidance.consider : question.guidance && question.guidance.summary || question.prompt);
+                hint.id = 'ncsc-input-guidance-' + question.id; fieldset.setAttribute('aria-describedby', hint.id); fieldset.append(hint);
+            }
             // The choices follow the question directly. The example, checks, full
             // framework wording and answer meanings sit in one native disclosure
             // after them: open by default on wider screens, closed on narrow ones.
@@ -2042,8 +2005,6 @@
                 help.append(node('h3', '', 'What to check'), checks,
                     node('h3', '', 'Full framework question'), node('p', '', question.prompt));
             }
-            // Narrow screens hide the definition under each choice; the same
-            // definitions stay here and in each choice's accessible description.
             const meanings = node('div', 'ncsc-help-answers'); meanings.append(node('h3', '', 'What the answers mean'));
             const meaningList = node('ul');
             question.responseOptionIds.forEach(function (id) {
@@ -2055,8 +2016,6 @@
             help.open = questionHelpOpen.has(question.id) ? questionHelpOpen.get(question.id) : !sealed && !narrow;
             help.addEventListener('toggle', function () { if (live(renderedEpoch)) questionHelpOpen.set(question.id, help.open); });
             if (acknowledged.status === 'submitted') fieldset.append(node('p', 'dashboard-badge', 'Your answer: ' + (optionById.get(entry.value.optionId)?.label || 'Not answered')));
-            if (acknowledged.status !== 'submitted') fieldset.append(node('p', 'ncsc-answer-reassurance', isV2(metadata)
-                ? 'Not sure? Choose I don\'t know. You can ask your IT provider later.' : 'Not sure? Unknown is fine. You can ask your IT provider later.'));
             const tiles = node('div', 'ncsc-answer-tiles'); fieldset.append(tiles);
             const writable = canEdit();
             question.responseOptionIds.forEach(function (id) {
@@ -2064,7 +2023,7 @@
                 const input = node('input'); input.type = 'radio'; input.name = 'ncsc-answer-' + question.id; input.id = 'ncsc-answer-' + question.id + '-' + id;
                 input.value = id; input.checked = entry.value.optionId === id; input.disabled = !writable;
                 const title = node('strong', '', option.label); title.id = input.id + '-label';
-                const definition = node('span', 'dashboard-muted ncsc-option-help', ANSWER_GUIDANCE[id]); definition.id = input.id + '-help';
+                const definition = node('span', 'dashboard-muted ncsc-option-help', TILE_HINT[id]); definition.id = input.id + '-help';
                 input.setAttribute('aria-labelledby', title.id); input.setAttribute('aria-describedby', definition.id);
                 const description = node('span'); description.append(title, node('br', 'ncsc-option-break'), definition);
                 label.setAttribute('for', input.id); label.append(input, description);
@@ -2108,7 +2067,8 @@
                 }, 'dashboard-text-button');
                 clear.id = 'ncsc-clear-answer'; answers.append(clear);
             }
-            layout.append(help);
+            const side = node('aside', 'ncsc-focus-help'); side.setAttribute('aria-label', 'Question guidance');
+            side.append(help); layout.append(side);
             const guidance = node('details', 'ncsc-guidance'); guidance.append(node('summary', '', 'Guidance and evidence examples'));
             if (inputGuidance) guidance.append(node('p', 'ncsc-input-example', 'Example: ' + inputGuidance.example));
             if (question.guidance) {
@@ -2134,7 +2094,8 @@
                 guidance.append(sources);
             }
             help.append(guidance);
-            renderAssistance(question, writable);
+            renderAssistance(question, writable, side);
+            if (!sealed) side.append(glossary());
             const nav = node('div', 'ncsc-question-navigation');
             const previous = button('Previous question', function () {
                 if (questionRegion.contains(previous) && activeQuestion > 0) { activeQuestion -= 1; renderAssessmentQuestion(); }
@@ -2174,8 +2135,10 @@
             // landscape phone) would cover answers, so it stays in the page below
             // the choices instead of sticking (WCAG 1.4.4, 1.4.10).
             stopNavigationFit();
+            const header = functionSteps.parentElement;
             const fitNavigation = function () {
                 if (!nav.isConnected) { stopNavigationFit(); return; }
+                header.classList[win && header.offsetHeight > win.innerHeight / 3 ? 'add' : 'remove']('ncsc-stepper-static');
                 const tall = Boolean(win && nav.offsetHeight > (win.innerHeight || 0) / 4);
                 nav.classList[tall ? 'add' : 'remove']('ncsc-navigation-static');
             };
@@ -2184,6 +2147,7 @@
             // (rotation, browser bars); stopped when the question is replaced.
             const watcher = win && typeof win.ResizeObserver === 'function' ? new win.ResizeObserver(fitNavigation) : null;
             if (watcher) watcher.observe(nav);
+            if (watcher) watcher.observe(header);
             if (win && typeof win.addEventListener === 'function') win.addEventListener('resize', fitNavigation);
             stopNavigation = function () {
                 if (watcher) watcher.disconnect();
@@ -2192,7 +2156,7 @@
             applyInlineErrors();
             restoreFocus(questionRegion, focused, fieldset.querySelector('legend'));
         }
-        function renderAssistance(question, writable) {
+        function renderAssistance(question, writable, side) {
             if (acknowledged.status === 'submitted') assistanceNotes.clear();
             const assistant = options.assistance;
             const assisted = writable && assistant && typeof assistant.suggest === 'function';
@@ -2201,7 +2165,7 @@
             panel.append(node('summary', '', assisted ? 'Help me answer this question' : 'How to answer this question'));
             panel.append(node('p', '', question.guidance && question.guidance.summary || question.prompt));
             panel.append(node('p', 'dashboard-muted', 'Describe what actually happens, who manages it, and what information supports it. Unknown is a valid answer.' + (assisted ? ' AI suggestions need your review and do not verify evidence.' : '')));
-            questionRegion.append(panel);
+            side.append(panel);
             if (!assisted) return;
             const label = node('label', '', 'Describe your setup or paste relevant information');
             const notes = node('textarea', 'ncsc-textarea'); notes.id = 'ncsc-assistance-notes-' + question.id;
@@ -2278,7 +2242,6 @@
         }
         function renderAssessmentQuestion() {
             if (!live()) return;
-            const index = content.querySelector('select'); if (index) index.value = String(activeQuestion);
             renderQuestion(); const legend = questionRegion.querySelector('legend'); legend.tabIndex = -1; legend.focus();
             // Navigation is often pressed from below the question; bring the new question into view.
             if (typeof questionRegion.scrollIntoView === 'function') questionRegion.scrollIntoView({ block: 'start' });
@@ -2305,7 +2268,7 @@
             const inputs = rationale ? [rationale] : Array.from(questionRegion.querySelectorAll('input')).filter(function (input) { return input.type === 'radio'; });
             if (!rationale) {
                 const fieldset = questionRegion.querySelector('fieldset');
-                fieldset.setAttribute('aria-describedby', fieldset.getAttribute('aria-describedby') + ' ' + message.id);
+                fieldset.setAttribute('aria-describedby', ((fieldset.getAttribute('aria-describedby') || '') + ' ' + message.id).trim());
             }
             inputs.forEach(function (input) {
                 input.setAttribute('aria-invalid', 'true'); input.setAttribute('aria-describedby', ((input.getAttribute('aria-describedby') || '') + ' ' + message.id).trim());

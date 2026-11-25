@@ -173,7 +173,7 @@ const blocked = [], errors = [], captures = [], requests = [], prints = [];
         const start = page.getByRole('button', { name: 'Start an assessment', exact: true }); if (await start.isVisible()) await start.click();
         await page.locator('#ncsc-scope').fill('Synthetic office and cloud services.');
         await page.getByRole('button', { name: 'Create assessment', exact: true }).click();
-        await page.locator('#ncsc-question-index').waitFor(); await capture('04-question-one', page.locator('#ncsc-question-index'));
+        await page.locator('#ncsc-question-text').waitFor(); await capture('04-question-one', page.locator('#ncsc-question-text'));
         assert.equal(evidence(), null);
         showResult = true; await page.goto(origin + '/dashboard#overview'); await page.locator('.picture-top-gaps').waitFor();
         await page.locator('.picture-top-gaps').evaluate(node => node.scrollIntoView({ block: 'start' }));

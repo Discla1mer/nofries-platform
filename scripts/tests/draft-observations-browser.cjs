@@ -53,8 +53,9 @@ async function main() {
             assert.match(await panel.textContent(), /Applicability to confirm · 1/);
             assert.doesNotMatch(await panel.textContent(), /\d+(?:\.\d+)?%/);
             const jump = panel.getByRole('button', { name: /Question 2:/ });
+            const questionId = (await jump.getAttribute('id')).replace('ncsc-draft-observation-', '');
             await jump.focus(); await page.keyboard.press('Enter');
-            assert.equal(await page.locator('#ncsc-question-index').inputValue(), '1');
+            assert.equal(await page.locator('.ncsc-answer input').first().getAttribute('name'), 'ncsc-answer-' + questionId);
             assert.equal(await page.locator('.ncsc-question legend').evaluate(node => node === document.activeElement), true);
             await page.locator('.ncsc-question input[value="no"]').check();
             assert.match(await panel.textContent(), /Reported gaps · 0/);

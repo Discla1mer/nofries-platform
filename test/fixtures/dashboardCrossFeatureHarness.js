@@ -160,7 +160,7 @@ async function harness(accountType) {
         expect(saved).toHaveLength(1); const index = requests.length; saved[0].click(); await flush(); await serve(index);
     }
     function choose(index, option) {
-        const picker = byId('ncsc-question-index'); picker.value = String(index); event(picker, 'change');
+        require('./questionNavigation').goToQuestion(elements.dashboardApp, cyber.metadata.questions, index);
         const input = byId('ncsc-answer-' + cyber.metadata.questions[index].id + '-' + option);
         input.checked = true; event(input, 'change'); return input;
     }

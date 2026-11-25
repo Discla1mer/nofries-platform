@@ -169,11 +169,10 @@ async function prepare(page, view) {
         assert.match(await page.locator('.picture-empty').textContent(), /responses saved/);
         assert.equal(await page.locator('.picture-metrics').count(), 0);
     } else if (view === 'questionnaire') {
-        const index = page.getByLabel('Question', { exact: true }); await index.waitFor();
-        const initial = Number(await index.inputValue());
-        await index.focus(); await page.keyboard.press('ArrowDown'); assert.equal(await index.inputValue(), String(initial + 1));
-        await page.keyboard.press('Home'); assert.equal(await index.inputValue(), '0');
-        assert.notEqual(await index.evaluate(node => getComputedStyle(node).outlineStyle), 'none');
+        const step = page.locator('.ncsc-function-step').nth(1);
+        await step.focus(); assert.notEqual(await step.evaluate(node => getComputedStyle(node).outlineStyle), 'none');
+        await page.keyboard.press('Enter'); assert.equal(await step.getAttribute('aria-current'), 'step');
+        assert.equal(await page.evaluate(() => document.activeElement.id), 'ncsc-question-text');
         await page.locator('.ncsc-option input').first().focus();
         assert.notEqual(await page.locator('.ncsc-option input').first().evaluate(node => getComputedStyle(node).outlineStyle), 'none');
     } else if (view === 'results') {

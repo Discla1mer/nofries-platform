@@ -57,16 +57,16 @@ async function run() {
             async function save(delayed) {
                 if(delayed) await browser.evaluate(`document.getElementById('scenario').value='delay';document.getElementById('arm-scenario').click()`);
                 await browser.evaluate(`document.getElementById('ncsc-save').focus();document.getElementById('ncsc-save').scrollIntoView({block:'center'})`);
-                const before=await browser.evaluate(`({scroll:scrollY,question:document.getElementById('ncsc-question-index').value,writes:window.personaWrites.length})`);
+                const before=await browser.evaluate(`({scroll:scrollY,question:document.getElementById('ncsc-question-text').textContent,writes:window.personaWrites.length})`);
                 await browser.click('#ncsc-save',true);
                 if(delayed) assert.equal(await browser.evaluate('document.getElementById("ncsc-save").disabled'),true);
                 await browser.wait(`document.getElementById('ncsc-save')&&!document.getElementById('ncsc-save').disabled&&/Your progress is saved/.test(document.getElementById('ncsc-save-status').textContent)`);
-                const after=await browser.evaluate(`({scroll:scrollY,question:document.getElementById('ncsc-question-index').value,focus:document.activeElement.id,writes:window.personaWrites.length})`);
+                const after=await browser.evaluate(`({scroll:scrollY,question:document.getElementById('ncsc-question-text').textContent,focus:document.activeElement.id,writes:window.personaWrites.length})`);
                 assert.ok(Math.abs(before.scroll-after.scroll)<=2,JSON.stringify({before,after})); assert.equal(after.question,before.question); assert.equal(after.focus,'ncsc-save'); assert.equal(after.writes,before.writes+1);
                 return {delayed,before,after};
             }
             await scaleAndLayout('list');
-            await browser.click('.ncsc-assessment-list button[data-assessment-id="assessment-b"]'); await browser.wait('document.getElementById("ncsc-question-index")');
+            await browser.click('.ncsc-assessment-list button[data-assessment-id="assessment-b"]'); await browser.wait('document.getElementById("ncsc-question-text")');
             await scaleAndLayout('question'); await choose('partial'); const delayed=await save(true);
             await scaleAndLayout('saved'); await choose('no'); const immediate=await save(false);
             await button('Review and submit'); await browser.wait('document.querySelector(".ncsc-review")'); await scaleAndLayout('review');

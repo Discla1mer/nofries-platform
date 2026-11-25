@@ -194,10 +194,12 @@ async function journey(browser, engine, provider, tls, output) {
         await cyber.waitFor(); await capture('dashboard'); await cyber.click();
         step = 'assessment-create'; await button(page, 'Start an assessment').click();
         await page.locator('#ncsc-scope').fill('Synthetic office and cloud services for renewal browser test.'); await button(page, 'Create assessment').click();
-        await page.locator('#ncsc-question-index').waitFor(); await capture('assessment');
-        const questions = await page.locator('#ncsc-question-index option').evaluateAll(nodes => nodes.map(node => node.value)); receipt.assessmentQuestions = questions.length;
-        step = 'assessment-answer';
-        for (const value of questions) { await page.locator('#ncsc-question-index').selectOption(value); await page.locator('.ncsc-answer input[value="no"]').check(); }
+        await page.locator('#ncsc-question-text').waitFor(); await capture('assessment');
+        step = 'assessment-answer'; receipt.assessmentQuestions = fixtures.metadata.questions.length;
+        for (let i = 0; i < receipt.assessmentQuestions; i++) {
+            if (i) await button(page, 'Next question').click();
+            await page.locator('.ncsc-answer input[value="no"]').check();
+        }
         step = 'assessment-review'; await button(page, 'Review and submit').click(); await page.locator('.ncsc-review').waitFor(); await capture('assessment-review');
         await button(page, 'Save and submit assessment').click(); await page.getByRole('dialog').getByRole('button', { name: 'Submit', exact: true }).click();
         step = 'results'; await page.locator('.ncsc-results').waitFor(); await capture('results');

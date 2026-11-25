@@ -1,4 +1,5 @@
 'use strict';
+const openQuestion = require('./helpers/open-ncsc-question.cjs');
 
 // Optional Chromium acceptance; uses the installed Playwright, no dependency change.
 // NOFRIES_LEAVE_CONTROLS_ARTIFACTS writes synthetic screenshots and a result receipt.
@@ -30,7 +31,7 @@ async function openAssessment(page) {
     // The desktop rail and the mobile task bar both render this link; use the one shown at this width.
     await keyboardClick(page, page.locator('.dashboard-module-link[data-module="cyber_security"]').filter({ visible: true }));
     await page.locator('.ncsc-assessment-list button').first().click();
-    await page.locator('#ncsc-question-index').selectOption('1');
+    await openQuestion(page, 1);
 }
 async function choose(page, value) { await page.locator('.ncsc-question input[value="' + value + '"]').check(); }
 async function leave(page) {

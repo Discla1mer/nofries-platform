@@ -244,7 +244,7 @@ test.each(['revision', 'hash'])('%s drift requires an explicit second read while
     try {
         expect(h.client.update).toBeUndefined(); expect(h.client.history).toBeUndefined();
         await until(() => button(dom, 'Save progress'));
-        const picker = dom.root.querySelector('[id="ncsc-question-index"]'); picker.value = '0'; event(picker, 'change');
+        button(dom, metadata.domains[0].title).click();
         const input = dom.root.querySelector('[id="ncsc-answer-' + metadata.questions[0].id + '-not_applicable"]');
         input.checked = true; event(input, 'change');
         const rationale = dom.root.querySelector('[id="ncsc-rationale-' + metadata.questions[0].id + '"]');
