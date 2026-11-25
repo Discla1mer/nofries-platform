@@ -31,7 +31,7 @@ const clients = (records, remaining = 1) => ({ csrfToken, state: { status: 'clie
 const projection = name => projectDashboard(fixture({ now: '2026-09-08T23:30:00.000Z', name }));
 const response = (status, value) => ({ status, ok: status >= 200 && status < 300, redirected: false, type: 'basic',
     headers: { get: () => 'application/json; charset=utf-8' }, json: async () => value });
-const deferred = () => { let resolve; const promise = new Promise(yes => { resolve = yes; }); return { promise, resolve }; };
+const deferred = () => { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; };
 async function flush() { for (let i = 0; i < 35; i += 1) await Promise.resolve(); }
 
 // Actual loader and dashboard shell, with controlled DOM and transport. This
@@ -772,6 +772,22 @@ test.each([
     await h.reply(0, 200, state(null, GA, { paidFrameworkStatusAvailable: true }));
     await h.reply(1, 200, listing([row(A, 'Client A')]));
     await h.reply(2, status, body);
+    expect(h.status).toBe('selection');
+    expect(h.elements.dashboardChoices.children[0].children.map(node => node.textContent)).toEqual(['Assessment status unavailable']);
+    expect(h.requests).toHaveLength(3);
+});
+
+test.each([
+    ['a network failure', request => request.reject(new TypeError('Failed to fetch'))],
+    ['an HTML gateway page', request => request.resolve({ status: 504, redirected: false, type: 'basic',
+        headers: { get: name => name.toLowerCase() === 'content-type' ? 'text/html' : null }, json: async () => { throw new SyntaxError('html'); } })],
+    ['an unreadable JSON body', request => request.resolve({ status: 200, redirected: false, type: 'basic',
+        headers: { get: name => name.toLowerCase() === 'content-type' ? 'application/json' : null }, json: async () => { throw new SyntaxError('cut'); } })]
+])('%s on the status read keeps the organisation list usable', async (_label, fail) => {
+    const h = harness(); await flush();
+    await h.reply(0, 200, state(null, GA, { paidFrameworkStatusAvailable: true }));
+    await h.reply(1, 200, listing([row(A, 'Client A')]));
+    fail(h.requests[2]); await flush();
     expect(h.status).toBe('selection');
     expect(h.elements.dashboardChoices.children[0].children.map(node => node.textContent)).toEqual(['Assessment status unavailable']);
     expect(h.requests).toHaveLength(3);
