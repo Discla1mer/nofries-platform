@@ -116,7 +116,7 @@ describe('staff funnel route', () => {
                 release: jest.fn() };
             const timing = { query: jest.fn(async sql => {
                 const failsAtRole = ['22023', '42501'].includes(reason);
-                if (failsAtRole ? sql.startsWith('SET LOCAL ROLE') : sql.startsWith('WITH saves')) {
+                if (failsAtRole ? sql.startsWith('SET LOCAL ROLE') : sql.includes('FROM nofries.free_check_completion_stats')) {
                     throw Object.assign(new Error('synthetic timing failure'), { code: reason });
                 }
             }), release: jest.fn() };

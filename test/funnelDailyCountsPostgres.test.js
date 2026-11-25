@@ -93,7 +93,22 @@ test('native discovery accepts only explicit loopback test URLs', () => {
             FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
             WHERE n.nspname='nofries' AND c.relkind IN ('r','p','v','m','f')`, [capability]);
         expect(grants.rows.filter(row => row.read || row.write)).toEqual([
-            { relname: 'dashboard_ncsc_assessment_revisions', read: true, write: false }]);
+            { relname: 'free_check_completion_stats', read: true, write: false }]);
+        const owner = 'nofries_completion_stats_owner';
+        const topology = await ownerPool.query(`SELECT pg_get_userbyid(v.relowner) AS owner,
+            t.relrowsecurity AND t.relforcerowsecurity AS forced,
+            pg_has_role($1,$2,'MEMBER') OR pg_has_role($3,$2,'MEMBER') AS member,
+            EXISTS (SELECT FROM pg_auth_members m JOIN pg_roles r ON r.oid=m.member
+                WHERE m.roleid=v.relowner AND (r.rolcanlogin OR m.inherit_option OR m.set_option)) AS owner_granted,
+            has_schema_privilege($2,'nofries','CREATE') AS can_create
+            FROM pg_class v, pg_class t WHERE v.oid='nofries.free_check_completion_stats'::regclass
+            AND t.oid='nofries.dashboard_ncsc_assessment_revisions'::regclass`, [role, owner, capability]);
+        expect(topology.rows).toEqual([{ owner, forced: true, member: false, owner_granted: false, can_create: false }]);
+        const ownerReads = await ownerPool.query(`SELECT table_name, column_name FROM information_schema.columns
+            WHERE table_schema='nofries' AND table_name <> 'free_check_completion_stats'
+            AND has_column_privilege($1,format('%I.%I',table_schema,table_name),column_name,'SELECT') ORDER BY column_name`, [owner]);
+        expect(ownerReads.rows).toEqual(['assessment_id','organisation_id','payload','revision','tenant_id']
+            .map(column_name => ({ table_name: 'dashboard_ncsc_assessment_revisions', column_name })));
         const tenantId = crypto.randomUUID(), organisationId = crypto.randomUUID();
         await ownerPool.query('INSERT INTO nofries.dashboard_tenants VALUES ($1,1,0,$2)', [tenantId,
             { schemaVersion: 1, tenantId, displayName: 'Synthetic tenant', recordStatus: 'active', revision: 0 }]);
@@ -128,9 +143,14 @@ test('native discovery accepts only explicit loopback test URLs', () => {
             try {
                 await client.query('BEGIN READ ONLY');
                 await client.query('SET LOCAL ROLE nofries_completion_stats_reader');
-                const visible = await client.query(`SELECT assessment_id, revision FROM nofries.dashboard_ncsc_assessment_revisions`);
-                expect(visible.rows.some(row => row.assessment_id === 'old' || row.revision === 2)).toBe(false);
-                expect(visible.rows).toHaveLength(19);
+                const view = await client.query('SELECT * FROM nofries.free_check_completion_stats');
+                expect(view.rows).toEqual([{ count: null, elapsedMedian: null, elapsedP80: null, activeMedian: null, activeP80: null }]);
+                for (const sql of ['SELECT revision FROM nofries.dashboard_ncsc_assessment_revisions',
+                    'SELECT payload FROM nofries.dashboard_ncsc_assessment_revisions', 'SET LOCAL ROLE nofries_completion_stats_owner']) {
+                    await client.query('SAVEPOINT restricted_read');
+                    await expect(client.query(sql)).rejects.toMatchObject({ code: '42501' });
+                    await client.query('ROLLBACK TO SAVEPOINT restricted_read');
+                }
             } finally {
                 await client.query('ROLLBACK');
                 client.release();

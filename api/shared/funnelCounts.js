@@ -234,31 +234,7 @@ function projectFunnelView(rows, window) {
         days: window.days.map(day => ({ day, counts: byDay.get(day) })) };
 }
 
-// The row at the submission revision terminates the timing window, even if a
-// review or archive revision follows. No assessment-level values leave SQL.
-const COMPLETION_SQL = `WITH saves AS (
-    SELECT tenant_id, organisation_id, assessment_id, revision,
-        (payload#>>'{state,createdAt}')::timestamptz AS started,
-        (payload#>>'{state,updatedAt}')::timestamptz AS saved,
-        (payload#>>'{state,submission,submittedAt}')::timestamptz AS submitted,
-        (payload#>>'{state,submission,revision}')::integer AS submission_revision
-    FROM nofries.dashboard_ncsc_assessment_revisions
-    WHERE (payload#>>'{state,createdAt}')::timestamptz BETWEEN now() - interval '90 days' AND now()
-), gaps AS (
-    SELECT *, saved - lag(saved) OVER (PARTITION BY tenant_id, organisation_id, assessment_id ORDER BY revision) AS gap
-    FROM saves WHERE submission_revision IS NULL OR revision <= submission_revision
-), checks AS (
-    SELECT extract(epoch FROM max(submitted) - min(started)) / 60 AS elapsed,
-        sum(least(coalesce(extract(epoch FROM gap), 0), 300)) / 60 AS active
-    FROM gaps GROUP BY tenant_id, organisation_id, assessment_id
-    HAVING max(submitted) <= now()
-)
-SELECT CASE WHEN count(*) >= 10 THEN count(*)::integer END AS count,
-    CASE WHEN count(*) >= 10 THEN percentile_cont(0.5) WITHIN GROUP (ORDER BY elapsed) END AS "elapsedMedian",
-    CASE WHEN count(*) >= 10 THEN percentile_cont(0.8) WITHIN GROUP (ORDER BY elapsed) END AS "elapsedP80",
-    CASE WHEN count(*) >= 10 THEN percentile_cont(0.5) WITHIN GROUP (ORDER BY active) END AS "activeMedian",
-    CASE WHEN count(*) >= 10 THEN percentile_cont(0.8) WITHIN GROUP (ORDER BY active) END AS "activeP80"
-FROM checks`;
+const COMPLETION_SQL = 'SELECT count, "elapsedMedian", "elapsedP80", "activeMedian", "activeP80" FROM nofries.free_check_completion_stats';
 
 async function queryCompletionStats(pool) {
     const client = await acquireClient(pool, ACQUIRE_TIMEOUT_MS);
