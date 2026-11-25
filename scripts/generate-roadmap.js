@@ -29,7 +29,8 @@ function renderRoadmap(data = readRoadmap()) {
     const lines = ['<!-- ROADMAP:START -->', '<header class="public-roadmap-intro">',
         '<div><p class="eyebrow">The No Fries dashboard</p>',
         `<h1>${escape(data.title)}</h1><p class="home-lead">${escape(data.lead)}</p>`,
-        `<p>Last updated <time datetime="${escape(data.lastUpdated)}">${formatDate(data.lastUpdated)}</time>.</p></div>`,
+        `<p>Last updated <time datetime="${escape(data.lastUpdated)}">${formatDate(data.lastUpdated)}</time>.</p>`,
+        `<p class="roadmap-service">${escape(data.serviceNote)} <a href="/pricing.html#pricing-pilot">See 90-day service details</a>.</p></div>`,
         '<ul class="roadmap-counts" aria-label="Roadmap items by stage">'];
     for (const lane of lanes) {
         const count = data.items.filter(item => item.lane === lane).length;
@@ -40,7 +41,7 @@ function renderRoadmap(data = readRoadmap()) {
     lines.push('</div>', '<div class="roadmap-map" hidden></div>', '<div class="roadmap-detail" aria-live="polite" hidden></div>',
         '<details class="roadmap-fine"><summary>Fine print</summary>',
         `<p>${escape(data.notice)} What you can use depends on the access your organisation has agreed.</p>`,
-        `<p>${escape(data.serviceNote)} <a href="/pricing.html#pricing-pilot">See 90-day service details</a>.</p>`, '<dl class="roadmap-legend">');
+        '<dl class="roadmap-legend">');
     for (const [lane, meaning] of Object.entries(data.lanes)) lines.push(`<div><dt>${escape(lane)}</dt><dd>${escape(meaning)}</dd></div>`);
     lines.push('</dl>', '</details>', '<details class="roadmap-list" open><summary>Every item as a list</summary>',
         '<nav class="roadmap-jump" aria-label="Roadmap sections">');

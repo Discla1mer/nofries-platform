@@ -1494,6 +1494,7 @@ body[data-page="public-error"] .public-shell { min-height: 0; }
 body[data-page="product-roadmap"] { --rm-check: var(--green); --rm-fix: var(--red); --rm-prove: #9c6f17; --rm-run: #40382e; }
 .public-roadmap-intro { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: 24px; align-items: end; max-width: none; margin-bottom: 20px; }
 .public-roadmap-intro h1 { font-size: clamp(2.2rem, 5vw, 3.4rem); margin: 8px 0 12px; text-wrap: balance; }
+body[data-page="product-roadmap"] .public-roadmap-intro .roadmap-service { color: var(--ink-soft); font-size: 0.95rem; margin: 8px 0 0; }
 .roadmap-counts { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
 .roadmap-counts a { display: block; min-height: 44px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--paper, #f6f2ea); color: var(--muted); font-size: .85rem; text-decoration: none; }
 .roadmap-counts strong { display: block; color: var(--ink); font: 600 1.9rem/1 var(--font-display); }
@@ -1596,6 +1597,7 @@ body[data-page="product-roadmap"] .public-roadmap .roadmap-counts a:not(.button)
 @media (max-width: 900px) {
     .roadmap-list.is-compact .roadmap-lane article { display: inline-flex; margin: 0 6px 8px 0; padding: 0; border: 0; }
     .roadmap-list.is-compact .roadmap-lane article > :not(h3) { display: none; }
+    .roadmap-list.is-compact .roadmap-lane article > p:has(> a:only-child) { display: inline-flex; align-items: center; margin: 0 0 0 8px; font-size: 0.9rem; }
     .roadmap-list.is-compact .roadmap-lane article h3 { margin: 0; font: inherit; }
     .roadmap-item-button { min-height: 44px; padding: 8px 12px; border: 1px solid var(--line); border-left: 5px solid var(--rm-c); border-radius: 10px; background: var(--paper, #f6f2ea); color: var(--ink); font: 500 .9rem/1.3 var(--font-sans); text-align: left; cursor: pointer; }
     .roadmap-item-button:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
