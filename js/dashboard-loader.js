@@ -58,7 +58,6 @@
     const accountActions = document.getElementById('dashboardAccountActions');
     const accountToggle = document.getElementById('dashboardAccountToggle');
     const accountSwitch = document.getElementById('dashboardSwitchAccount');
-    const emailSettings = document.getElementById('dashboardEmailSettings');
     const settings = document.getElementById('dashboardSettings');
     if (settings) settings.addEventListener('click', function (event) {
         if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button > 0) return;
@@ -432,7 +431,6 @@
         elements.signOut.disabled = state === 'loading';
         if (accountSwitch) accountSwitch.hidden = cycle.session?.purpose !== 'customer' || elements.signOut.hidden;
         if (settings) settings.hidden = state !== 'ready' || cycle.session?.purpose !== 'customer';
-        if (emailSettings) emailSettings.hidden = cycle.session?.purpose !== 'customer' || elements.signOut.hidden;
         if (cycle.session || state === 'unauthenticated' || state === 'expired') renderAccountIdentity(cycle);
         if (accountMenu) {
             accountMenu.hidden = elements.signOut.hidden;
