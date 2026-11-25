@@ -1100,6 +1100,10 @@ describe('empty Improvement Plan tab', () => {
         const h = empty(jest.fn(async () => latest()));
         expect(await h.controller.ready).toBe(true);
         expect(h.options.latestSource).toHaveBeenCalledTimes(1);
+        const illustration = h.root.querySelector('img');
+        expect(illustration.src).toBe('/images/illustrations/plan-empty.webp');
+        expect(illustration.alt).toBe('');
+        expect(illustration.parentElement.children[0]).toBe(illustration);
         expect(h.root.textContent).toContain('No improvement plan yet');
         expect(h.root.textContent).toContain('Create a plan from your latest submitted assessment (submitted 13 Nov 2026, 5:51 pm).');
         expect(h.root.textContent).not.toContain('No saved improvement plans are available');
@@ -1109,6 +1113,7 @@ describe('empty Improvement Plan tab', () => {
         expect(h.writes).toEqual([expect.objectContaining({ type: 'generate', planId: 'overview-plan-' + 'b'.repeat(64),
             payload: { assessmentId: input.assessmentId, assessmentRevision: 10, assessmentRevisionSha256: 'b'.repeat(64) } })]);
         expect(h.root.textContent).toContain('Improvement action plan');
+        expect(h.root.querySelector('img')).toBeNull();
         expect(h.root.textContent).not.toContain('No improvement plan yet');
         expect(h.options.newId).not.toHaveBeenCalled();
     });
