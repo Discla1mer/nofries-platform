@@ -1410,6 +1410,8 @@
         function button(text, action, className) {
             const node = element('button', text, className); node.type = 'button'; node.addEventListener('click', action); return node;
         }
+        let assessmentRows = [], directoryStart = null, nextDirectoryStart = null;
+        const summary = element('section'); summary.setAttribute('aria-label', 'Client overview');
         const introduction = element('p', 'Saved Improvement Plan actions. Filters apply to the current page. Returning to the queue starts a fresh scan from the first page.', 'work-queue-intro');
         const controls = element('div', undefined, 'work-queue-filters');
         const searchLabel = element('label', 'Search actions or organisations');
@@ -1444,7 +1446,28 @@
         const refresh = button('Refresh actions', function () { load(null, true); }, 'work-queue-secondary');
         pager.append(first, more, refresh); first.hidden = true; more.hidden = true;
         search.setAttribute('aria-controls', list.id); search.addEventListener('input', function () { filters.query = search.value; render(); });
-        root.replaceChildren(introduction, controls, status, checked, list, pager);
+        root.replaceChildren(introduction, summary, controls, status, checked, list, pager);
+        function renderSummary() {
+            summary.replaceChildren();
+            if (!page.organisations.length) return;
+            summary.append(element('h2', 'Client overview'), element('p',
+                'Paid assessment status is shown by framework. The portfolio does not report the latest NCSC assessment or last submission date. Open a client to check their assessment history.'));
+            const clients = element('ul');
+            page.organisations.forEach(function (org, index) {
+                const item = element('li');
+                item.append(element('strong', org.organisationLabel));
+                const found = assessmentRows.find(function (row) { return row.bindingId === org.bindingId; });
+                item.append(element('p', found && found.paidStatus || 'Paid assessment status not available here.'));
+                // A checked first group on a continuation page may have started
+                // on an earlier page. Do not retain past rows across authority reads.
+                const full = org.state === 'checked' && (cursor === null || index > 0);
+                const count = page.rows.filter(function (row) { return row.bindingId === org.bindingId && row.status !== 'completed'; }).length;
+                item.append(element('p', org.state === 'unavailable' ? 'Open actions: unavailable.' :
+                    full ? 'Open actions: ' + count + '.' : 'Open actions on this page: ' + count + ' (not a total).'));
+                clients.append(item);
+            });
+            summary.append(clients);
+        }
         function visible(row) {
             if (filters.status === 'unfinished' && row.status === 'completed' || filters.status === 'completed' && row.status !== 'completed') return false;
             if (filters.organisation && row.bindingId !== filters.organisation) return false;
@@ -1538,6 +1561,7 @@
             function releaseFocus() { focusEvents.forEach(function (name) { window.removeEventListener(name, movedFocus, true); }); }
             focusEvents.forEach(function (name) { window.addEventListener(name, movedFocus, true); });
             cycle.cleanup.push(releaseFocus);
+            summary.replaceChildren(); assessmentRows = [];
             list.replaceChildren(); checked.textContent = ''; status.textContent = 'Checking current access and saved actions…';
             const unselected = element('option', 'All shown organisations'); unselected.value = ''; organisations.replaceChildren(unselected); organisations.value = '';
             organisations.disabled = true;
@@ -1549,6 +1573,21 @@
                 if (!sameSession(fresh, cycle.session)) { restore(); return; }
                 const path = '/api/dashboard/work-queue?limit=50' + (nextCursor === null ? '' : '&cursor=' + encodeURIComponent(nextCursor));
                 const data = queuePage(requireSuccess(await request(cycle, path, undefined, fresh.generation)));
+                // Bound the optional enrichment to one existing directory page.
+                // Match only exact current binding IDs and publish after the closing session check.
+                if (fresh.paidFrameworkStatusAvailable === true && data.organisations.length) {
+                    directoryStart = nextCursor === null ? null : nextDirectoryStart;
+                    try {
+                        const details = await directory(cycle, fresh, [], directoryStart, undefined, true);
+                        assessmentRows = details ? details.rows : [];
+                    } catch (error) {
+                        if (error && ([401, 403, 409].includes(error.status) || error.expired)) throw error;
+                        assessmentRows = [];
+                    }
+                    const checkedGroups = data.organisations.filter(function (org) { return org.state === 'checked'; });
+                    nextDirectoryStart = checkedGroups.length ? checkedGroups[checkedGroups.length - 1].bindingId : directoryStart;
+                }
+                if (!live() || version !== ownVersion) return;
                 const confirmed = await readSession(cycle);
                 if (!live() || version !== ownVersion) return;
                 if (!sameSession(fresh, confirmed)) { restore(); return; }
@@ -1556,7 +1595,7 @@
                 const all = element('option', 'All shown organisations'); all.value = ''; organisations.replaceChildren(all);
                 page.organisations.forEach(function (item) { const option = element('option', item.organisationLabel); option.value = item.bindingId; organisations.append(option); });
                 if (filters.organisation && !page.organisations.some(function (item) { return item.bindingId === filters.organisation; })) filters.organisation = '';
-                organisations.value = filters.organisation; organisations.disabled = false; render();
+                organisations.value = filters.organisation; organisations.disabled = false; renderSummary(); render();
                 if (focus && ownsFocus) { status.tabIndex = -1; status.focus(); }
                 else if (ownsFocus && cycle.workQueueFocus) {
                     const prior = Array.from(list.querySelectorAll('button')).find(function (node) { return node.dataset.workQueueAction === cycle.workQueueFocus; });

@@ -461,3 +461,40 @@ test.each([
     expect(h.queue.textContent).toContain('currently unavailable'); expect(button(h, 'Refresh actions').disabled).toBe(false);
     expect(h.requests).toHaveLength(3);
 });
+
+test.each([true, false])('client overview only publishes confirmed status for the same binding (paid read succeeds: %s)', async ok => {
+    const h = harness(), account = state(A, GA, { paidFrameworkStatusAvailable: true });
+    await flush(); await h.reply(0, 200, account); await h.reply(1, 200, account);
+    await h.reply(2, 200, page([action('Check devices'), action('Already done', { status: 'completed' })], {
+        organisations: [organisation(), organisation(B, 'Other client')]
+    }));
+    expect(h.requests[3].url).toBe('/api/dashboard/organisations?limit=10');
+    await h.reply(3, 200, { schemaVersion: 1, bindings: [{ bindingId: A, organisationLabel: 'Kauri client' },
+        { bindingId: B, organisationLabel: 'Other client' }], nextAfterBindingId: null });
+    expect(h.requests[4].url).toBe('/api/dashboard/organisations/paid-framework-status');
+    await h.reply(4, ok ? 200 : 503, { rows: [{ bindingId: B, moduleId: 'cyber_security',
+        profileId: 'nf-nist-csf-2-0-core', version: '2026-09-08.1', status: 'submitted' }] });
+    expect(h.queue.textContent).not.toContain('Open actions:');
+    await h.reply(5, 200, account);
+    const clients = h.queue.querySelectorAll('li');
+    expect(clients[0].textContent).toContain('Kauri client Paid assessment status not available here. Open actions: 1.');
+    expect(clients[1].textContent).toContain('Open actions: 0.');
+    expect(clients[1].textContent.includes('NIST CSF 2.0: Submitted')).toBe(ok);
+    expect(h.queue.textContent).toContain('does not report the latest NCSC assessment or last submission date');
+    expect(h.requests.every(item => item.init.method === 'GET')).toBe(true);
+});
+
+test('a continued client is not presented as a total or retained after authority changes', async () => {
+    const h = harness();
+    await ready(h, page([action('First')], { organisations: [organisation(A, 'Kauri client', { state: 'partial' })],
+        nextCursor: 'next_page', coverage: { basis: 'current_page', checkedOrganisations: 0, partialOrganisations: 1,
+            unavailableOrganisations: 0, complete: false } }));
+    expect(h.queue.textContent).toContain('Open actions on this page: 1 (not a total).');
+    button(h, 'Next actions').click(); await flush();
+    expect(h.queue.textContent).not.toContain('not a total');
+    await nextPage(h, 4, page([]));
+    expect(h.queue.textContent).toContain('Open actions on this page: 0 (not a total).');
+    button(h, 'Refresh actions').click(); await flush();
+    await h.reply(7, 200, state()); await h.reply(8, 200, page()); await h.reply(9, 200, state(B, GB));
+    expect(h.queue.textContent).not.toContain('Open actions:');
+});
