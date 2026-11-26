@@ -271,10 +271,10 @@ test('uncertain writes retain their exact immutable command for explicit retry a
         return { status: 200, value: presentation(state.plans.get(decodeURIComponent(path.split('=')[1]))) };
     } });
     await h.controller.ready; expect(await h.controller.generate()).toBe(false);
-    expect(h.root.textContent).toContain('outcome is unconfirmed'); expect(h.root.textContent).not.toContain('PRIVATE');
+    expect(h.root.textContent).toContain('could not confirm your last change'); expect(h.root.textContent).not.toContain('PRIVATE');
     const leave = jest.fn(); expect(await h.controller.requestLeave(leave)).toBe(false); expect(leave).not.toHaveBeenCalled();
     expect(await h.controller.generate()).toBe(false); expect(h.options.newId).not.toHaveBeenCalled();
-    expect(button(h, 'Retry pending improvement command')).toBeDefined();
+    expect(button(h, 'Try saving again')).toBeDefined();
     expect(await h.controller.retry()).toBe(true); expect(attempts).toBe(2); expect(h.options.newId).not.toHaveBeenCalled();
     expect(await h.controller.requestLeave(leave)).toBe(true); expect(leave).toHaveBeenCalledTimes(1);
 });
@@ -296,7 +296,7 @@ test.each([408, 429])('an unexpected %i response after plan creation retains the
     await h.controller.ready;
     expect(await h.controller.generate()).toBe(false);
     expect(h.root.textContent).toContain(status === 429 ?
-        'Too many requests in a short time. Wait about a minute, then select Retry pending improvement command.' : 'outcome is unconfirmed');
+        'Too many requests in a short time. Wait about a minute, then select Try saving again.' : 'could not confirm your last change');
     expect(await h.controller.requestLeave(jest.fn())).toBe(false);
     expect(await h.controller.generate()).toBe(false);
     expect(await h.controller.retry()).toBe(true);
@@ -441,7 +441,7 @@ test.each([503, 'malformed'])('unconfirmed %s acknowledgement retains the origin
     } });
     await h.controller.ready; expect(await h.controller.generate()).toBe(false);
     const count = h.request.mock.calls.length; expect(count).toBe(2);
-    expect(h.root.textContent).toContain('outcome is unconfirmed');
+    expect(h.root.textContent).toContain('could not confirm your last change');
     expect(await h.controller.requestLeave(jest.fn())).toBe(false);
     expect(await h.controller.refresh()).toBe(false); expect(h.request).toHaveBeenCalledTimes(count);
     expect(await h.controller.retry()).toBe(false); expect(h.request.mock.calls.at(-1)[1]).toBe(posted);
@@ -453,7 +453,7 @@ test('definite rejected generation releases its retry identity and shell leave w
         return path.includes('/plans?') ? { status: 200, value: page([]) } : { status: 409, value: { code: 'improvement_source_conflict' } };
     } });
     await h.controller.ready; expect(await h.controller.generate()).toBe(false);
-    expect(button(h, 'Retry pending improvement command')).toBeUndefined(); expect(h.root.querySelectorAll('article')).toEqual([]);
+    expect(button(h, 'Try saving again')).toBeUndefined(); expect(h.root.querySelectorAll('article')).toEqual([]);
     const leave = jest.fn(); expect(await h.controller.requestLeave(leave)).toBe(true); expect(leave).toHaveBeenCalledTimes(1);
 });
 
@@ -626,7 +626,7 @@ test('a server owner_label_invalid keeps the draft and shows inline owner help',
     expect(h.request.mock.calls.filter(([path]) => path.endsWith('/execute'))[0][1].payload).toEqual({ ownerLabel: 'Aroha Ngata', dueDate: '2026-10-02' });
     expect(form(h)).toBe(retained); expect(owner.disabled).toBe(false); expect(h.document.activeElement).toBe(owner);
     expect(owner.getAttribute('aria-invalid')).toBe('true'); expect(owner.parentElement.querySelector('span').textContent).toBe(OWNER_LABEL_HELP);
-    expect(h.root.textContent).toContain('Improvement action plan'); expect(button(h, 'Retry pending improvement command')).toBeUndefined();
+    expect(h.root.textContent).toContain('Improvement action plan'); expect(button(h, 'Try saving again')).toBeUndefined();
 });
 
 test.each(OPERATIONS)('actual $type form sends the retained command and refreshes its resulting view/editor', async operation => {
@@ -908,7 +908,7 @@ test('a 409 keeps the draft for review and requires cancel plus explicit refresh
     expect(writes).toBe(1); expect(h.request.mock.calls).toHaveLength(reads + 1);
     expect(h.root.textContent).toContain('Plan changed'); expect(field(h, 'Due date').value).toBe('2026-10-02');
     const formSubmit = form(h).querySelectorAll('button').find(node => node.type === 'submit'); expect(disabled(formSubmit)).toBe(true);
-    expect(button(h, 'Retry pending improvement command')).toBeUndefined();
+    expect(button(h, 'Try saving again')).toBeUndefined();
     expect(await h.controller.requestLeave(jest.fn())).toBe(false); expect(await h.controller.refresh()).toBe(false);
     button(h, 'Cancel changes').click(); expect(form(h)).toBeUndefined(); expect(writes).toBe(1);
     expect(await h.controller.refresh()).toBe(true); expect(writes).toBe(1);
@@ -934,7 +934,7 @@ test('uncertain action submission disables editing and cancel while retry reuses
     await submitForm(h); expect(attempts).toBe(1); expect(disabled(field(h, 'Due date'))).toBe(true);
     expect(disabled(button(h, 'Cancel changes'))).toBe(true); expect(await h.controller.requestLeave(jest.fn())).toBe(false);
     field(h, 'Due date').value = '2030-01-01'; emit(field(h, 'Due date'), 'input');
-    button(h, 'Retry pending improvement command').click(); await settle();
+    button(h, 'Try saving again').click(); await settle();
     expect(attempts).toBe(2); expect(first.payload.dueDate).toBe('2026-10-02'); expect(h.options.newId).toHaveBeenCalledTimes(1);
     expect(form(h)).toBeUndefined(); expect(h.root.textContent).toContain('2 Oct 2026');
 });
@@ -1229,7 +1229,7 @@ describe('onAccepted reports only responses that pass validation', () => {
         expect(onAccepted).toHaveBeenCalledTimes(1);
         expect(await h.controller.generate()).toBe(false);
         expect(onAccepted).toHaveBeenCalledTimes(1);
-        expect(h.root.textContent).toContain('The command outcome is unconfirmed');
+        expect(h.root.textContent).toContain('We could not confirm your last change was saved');
     });
     test('a non-function onAccepted is rejected at mount', () => {
         const dom = createDom();

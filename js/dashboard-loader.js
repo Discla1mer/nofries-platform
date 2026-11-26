@@ -88,7 +88,9 @@
         if (!accountMenu) return;
         const email = cycle.session && typeof cycle.session.accountLabel === 'string' ? cycle.session.accountLabel : '';
         const rawName = cycle.session && typeof cycle.session.accountName === 'string' ? cycle.session.accountName : '';
-        const name = rawName && (!email || rawName.toLocaleLowerCase() !== email.toLocaleLowerCase()) ? rawName : '';
+        // Microsoft fills an unset display name with "unknown"; show nothing rather than that (#441 RANGI-16).
+        const name = rawName && rawName.trim().toLocaleLowerCase() !== 'unknown' &&
+            (!email || rawName.toLocaleLowerCase() !== email.toLocaleLowerCase()) ? rawName : '';
         let identity = document.getElementById('dashboardAccountIdentity');
         if (!email && !name) {
             if (identity) identity.remove();

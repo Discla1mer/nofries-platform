@@ -566,7 +566,7 @@ async function main() {
             const { page, fixture } = pendingRun;
             await reviewAndOpen(page); fixture.commandUncertain = true;
             await page.getByRole('button', { name: 'Create improvement plan for this assessment', exact: true }).click();
-            const retry = page.getByRole('button', { name: 'Retry pending improvement command', exact: true });
+            const retry = page.getByRole('button', { name: 'Try saving again', exact: true });
             await retry.waitFor();
             assert.equal(fixture.records.size, 1, 'The first synthetic generation committed before its acknowledgement was lost');
             assert.equal(fixture.requests.filter(row => row.method === 'POST').length, 1, 'An ambiguous response does not automatically repeat the command');
@@ -784,7 +784,7 @@ async function main() {
             const { page, fixture } = editRun;
             const planId = await createFromUi(editRun); await chooseAction(page);
             await fillAssignment(page, DUE_DATE); fixture.commandUncertain = true; await submitAction(page, 'assign');
-            const retry = page.getByRole('button', { name: 'Retry pending improvement command', exact: true }); await retry.waitFor();
+            const retry = page.getByRole('button', { name: 'Try saving again', exact: true }); await retry.waitFor();
             assert.equal(await updateForm(page).getByRole('button', { name: 'Cancel changes', exact: true }).isDisabled(), true,
                 'An unknown write outcome cannot be discarded as a clean cancellation');
             assert.equal(await updateForm(page).getByLabel('Due date', { exact: true }).isDisabled(), true);

@@ -278,7 +278,7 @@
         // True once this view's own create button was used, so the note confirms the new plan instead of calling it existing.
         let createdHere = false;
         const createControl = initialSource ? button('Create improvement plan for this assessment', generate) : null;
-        const retryControl = button('Retry pending improvement command', retry);
+        const retryControl = button('Try saving again', retry);
         toolbar.append(picker, refreshControl, moreControl);
         if (initialSource) {
             const selectedSource = node('p', 'Plan for your selected assessment.');
@@ -497,8 +497,8 @@
                 message = 'Improvement Plan access is unavailable. Reopen the dashboard to check the current organisation and access.';
             } else if (status === 429) {
                 message = 'Too many requests in a short time. Wait about ' + waitText(value) + ', then ' +
-                    (uncertain ? 'select Retry pending improvement command.' : 'select Refresh improvement plan.');
-            } else message = uncertain ? 'The command outcome is unconfirmed. Retry the same pending command before leaving.' :
+                    (uncertain ? 'select Try saving again.' : 'select Refresh improvement plan.');
+            } else message = uncertain ? 'We could not confirm your last change was saved. Select Try saving again before leaving.' :
                 'Improvement Plan is unavailable. Refresh to try the current saved state again.';
             render();
         }
@@ -708,7 +708,7 @@
         }
         async function submit() {
             if (!active() || busy || pending === null || scope === null) return false;
-            const token = ++serial, captured = pending; busy = true; message = 'Sending the retained improvement command…'; render();
+            const token = ++serial, captured = pending; busy = true; message = 'Saving your change…'; render();
             try {
                 const result = response(await request('/api/dashboard/improvement/execute', captured));
                 if (!active() || token !== serial || pending !== captured) return false;
@@ -771,7 +771,7 @@
         }
         function requestLeave(commit) {
             if (!active() || typeof commit !== 'function') return Promise.resolve(false);
-            if (pending) { message = 'Resolve the pending improvement command before leaving. Retry uses the same command identity.'; render(); return Promise.resolve(false); }
+            if (pending) { message = 'Your last change may not be saved. Select Try saving again before leaving.'; render(); return Promise.resolve(false); }
             if (draft) { message = 'Save or cancel the action changes before leaving.'; render(); return Promise.resolve(false); }
             return Promise.resolve().then(function () { if (!active()) return false; commit(); return true; });
         }
