@@ -291,7 +291,7 @@ async function adLinks(page, base, route) {
                 await page.unroute(base + '/api/enquiry');
             }
         } finally { await contactContext.close(); }
-        await require('./browns-bay-offer.cjs')(browser, base);
+        await require('./launch-offer.cjs')(browser, base);
         assert.deepEqual(unexpected, [], 'Unexpected network request or page error');
         assert.deepEqual(failures, [], 'Public accessibility failures');
     } finally {

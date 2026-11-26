@@ -8,7 +8,7 @@ const text = html.replace(/<!--[\s\S]*?-->/g, ' ').replace(/<[^>]+>/g, ' ').repl
 const headings = [...html.matchAll(/<h2 id="([^"]+)"/g)].map(match => match[1]);
 
 test('the pricing page shows the plans in the agreed order', () => {
-    expect(headings).toEqual(['pricing-free', 'pricing-pilot', 'pricing-assisted', 'pricing-assessments', 'pricing-support', 'pricing-managed-it', 'browns-bay', 'pricing-start']);
+    expect(headings).toEqual(['pricing-free', 'pricing-pilot', 'pricing-assisted', 'pricing-assessments', 'pricing-support', 'pricing-managed-it', 'endpoint-offer', 'pricing-start']);
     expect(html.match(/<h1\b/g)).toHaveLength(1);
     expect(html).toContain('<link rel="canonical" href="https://nofries.nz/pricing">');
     expect(html).toContain('<a class="skip-link" href="#main-content">Skip to content</a>');
