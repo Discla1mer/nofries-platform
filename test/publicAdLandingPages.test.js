@@ -36,6 +36,8 @@ test.each(pages)('%s links only to public files, valid fragments or existing ano
     for (const [, attribute, href] of html.matchAll(/\b(href|src)="([^"]+)"/g)) {
         if (href.startsWith('#')) { expect(html).toContain(`id="${href.slice(1)}"`); continue; }
         const url = new URL(href, 'https://nofries.nz');
+        // Primary-source figures link to the NCSC publication and open without passing the page.
+        if (url.origin === 'https://www.ncsc.govt.nz') { expect(html).toContain(`href="${href}" rel="noopener"`); continue; }
         expect(url.origin).toBe('https://nofries.nz');
         const file = url.pathname === '/' ? 'index.html' : url.pathname.slice(1);
         const rule = config.routes.find(entry => entry.route === url.pathname);

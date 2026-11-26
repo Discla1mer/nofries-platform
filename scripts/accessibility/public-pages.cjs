@@ -195,6 +195,12 @@ async function adLinks(page, base, route) {
     for (const href of links) {
         if (href.startsWith('#')) { assert.equal(await page.locator(href).count(), 1); continue; }
         const url = new URL(href, base);
+        // Primary-source figures link out to the NCSC publication: no campaign tags are forwarded there.
+        if (url.origin === 'https://www.ncsc.govt.nz') {
+            assert.equal([...url.searchParams.keys()].length, 0, href);
+            assert.equal(await page.locator(`a[href="${href}"]`).first().getAttribute('rel'), 'noopener');
+            continue;
+        }
         for (const [key, value] of new URLSearchParams(query)) if (key.startsWith('utm_')) assert.equal(url.searchParams.get(key), value);
         assert.equal(url.origin, base);
         assert.equal(url.searchParams.has('fbclid'), false);

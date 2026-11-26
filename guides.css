@@ -1,0 +1,101 @@
+/* Public guide, example and changelog visuals (26 Nov). Kept apart from home.css so page batches merge cleanly. */
+/* Guide page diagrams (26 Nov): one figure per page, built from NCSC figures or an illustrative example. */
+.guide-fig { margin: 22px 0 26px; padding: 18px 20px; background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius); }
+.guide-fig svg { display: block; width: 100%; height: auto; }
+.guide-fig figcaption { margin-top: 10px; font-size: .85rem; color: var(--muted); }
+.guide-fig figcaption a { color: var(--green); font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
+.guide-stat { margin: 0 0 10px; font-size: .98rem; line-height: 1.45; }
+.guide-stat strong { font-family: var(--font-display); font-size: 1.6rem; color: var(--green-dark); margin-right: 2px; }
+.guide-bar-label, .guide-bar-value { font: 500 14px var(--font-sans); fill: var(--ink); }
+.guide-bar-value { font-weight: 700; }
+.guide-bar-track { fill: var(--paper-strong); }
+.guide-bar-fill { fill: var(--yellow); }
+.guide-node { fill: var(--paper); stroke: var(--line-strong); stroke-width: 1.5; }
+.guide-node-key { fill: var(--green); stroke: var(--green); }
+.guide-node-go { fill: var(--yellow-soft); stroke: var(--green); }
+.guide-node-stop { fill: var(--red-soft); stroke: var(--red); }
+.guide-node-text { font: 600 14px var(--font-sans); fill: var(--ink); }
+.guide-node-text-key { fill: var(--paper); }
+.guide-node-small { font: 500 11.5px var(--font-sans); }
+.guide-arrow { fill: none; stroke: var(--green); stroke-width: 2.5; }
+.guide-arrow-stop { stroke: var(--red); stroke-dasharray: 5 4; }
+.guide-link { stroke: var(--green); stroke-width: 2.5; }
+.guide-link-cut { stroke: var(--red); stroke-dasharray: 6 5; }
+.guide-form-sheet { fill: var(--paper); stroke: var(--line-strong); }
+.guide-form-title { font: 700 15px var(--font-display); fill: var(--ink); }
+.guide-form-rule { stroke: var(--line); }
+.guide-form-q { font: 500 14px var(--font-sans); fill: var(--ink); }
+.guide-chip-yes { fill: var(--yellow-soft); stroke: var(--green); }
+.guide-chip-part { fill: var(--paper-strong); stroke: var(--line-strong); }
+.guide-chip-unsure { fill: var(--red-soft); stroke: var(--red); }
+.guide-chip-text { font: 700 12px var(--font-sans); fill: var(--ink); }
+.guide-tall { display: none !important; }
+@media (max-width: 560px) { .guide-wide { display: none !important; } .guide-tall { display: block !important; max-width: 340px; margin: 0 auto; } }
+.guide-bars { margin: 0; display: grid; gap: 10px; }
+.guide-bars > div { display: grid; grid-template-columns: minmax(0, 13rem) minmax(0, 1fr); gap: 12px; align-items: center; }
+.guide-bars dt { font-size: .95rem; }
+.guide-bars dd { margin: 0; display: grid; grid-template-columns: minmax(0, 1fr) 3rem; gap: 10px; align-items: center; font-weight: 700; text-align: right; }
+.guide-bars progress { appearance: none; width: 100%; height: 16px; border: 0; border-radius: 999px; background: var(--paper-strong); overflow: hidden; }
+.guide-bars progress::-webkit-progress-bar { background: var(--paper-strong); border-radius: 999px; }
+.guide-bars progress::-webkit-progress-value { background: var(--yellow); border-radius: 999px; }
+.guide-bars progress::-moz-progress-bar { background: var(--yellow); border-radius: 999px; }
+@media (max-width: 560px) { .guide-bars > div { grid-template-columns: 1fr; gap: 4px; } }
+.guide-form { border: 1px solid var(--line-strong); border-radius: var(--radius-small); padding: 12px 16px; }
+.guide-form .guide-form-title { margin: 0 0 8px; padding-bottom: 8px; border-bottom: 1px solid var(--line); font-family: var(--font-display); font-weight: 700; }
+.guide-form dl { margin: 0; display: grid; gap: 8px; }
+.guide-form dl > div { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.guide-form dt { font-size: .95rem; }
+.guide-form dd.guide-chip { margin: 0; flex: 0 0 auto; font-size: .82rem; font-weight: 700; padding: 3px 12px; border-radius: 999px; border: 1px solid; }
+dd.guide-chip-yes { background: var(--yellow-soft); border-color: var(--green); }
+dd.guide-chip-part { background: var(--paper-strong); border-color: var(--line-strong); }
+dd.guide-chip-unsure { background: var(--red-soft); border-color: var(--red); }
+
+/* Example result visuals (26 Nov): the same gauge, answer mix and function bars as the dashboard. */
+.sample-gauge { display: block; width: min(220px, 100%); height: auto; margin: 4px 0 8px; }
+.sample-gauge-track, .sample-gauge-fill { fill: none; stroke-width: 18; stroke-linecap: round; }
+.sample-gauge-track { stroke: var(--paper-strong); }
+.sample-gauge-fill { stroke: var(--green); }
+.sample-mix { display: flex; align-items: center; gap: 16px; margin: 4px 0 8px; }
+.sample-donut { width: 108px; height: 108px; flex: 0 0 auto; }
+.sample-donut circle { fill: none; stroke-width: 16; }
+.sample-donut-yes { stroke: var(--green); }
+.sample-donut-partial { stroke: var(--yellow); }
+.sample-donut-no { stroke: var(--red); }
+.sample-mix-key { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; font-size: .9rem; }
+.sample-mix-key li::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 8px; vertical-align: middle; }
+.sample-mix-key .k-yes::before { background: var(--green); }
+.sample-mix-key .k-partial::before { background: var(--yellow); }
+.sample-mix-key .k-no::before { background: var(--red); }
+.sample-bar { display: block; width: min(220px, 100%); height: 8px; margin-top: 6px; }
+.sample-bar-track { fill: var(--paper-strong); }
+.sample-bar-fill { fill: var(--green); }
+.sample-rank-note { margin: -4px 0 16px; } .sample-rank-note summary { cursor: pointer; font-weight: 600; color: var(--green-dark); } .sample-rank-note p { max-width: 75ch; }
+
+/* Changelog as a timeline (26 Nov): one rail, a dot per change, and the repeated "Published" label kept for screen readers only. */
+body[data-page="product-changelog"] .public-roadmap-grid { display: block; position: relative; max-width: 760px; padding-left: 34px; }
+body[data-page="product-changelog"] .public-roadmap-grid::before { content: ""; position: absolute; left: 9px; top: 10px; bottom: 10px; border-left: 3px solid var(--green); }
+body[data-page="product-changelog"] .public-roadmap-grid > article { position: relative; margin: 0 0 18px; padding: 16px 20px; background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius); }
+body[data-page="product-changelog"] .public-roadmap-grid > article .roadmap-status { position: absolute; left: -34px; top: 20px; width: 21px; height: 21px; padding: 0; margin: 0; border: 4px solid var(--green); border-radius: 50%; background: var(--yellow); box-sizing: border-box; overflow: hidden; color: transparent; font-size: 0; }
+body[data-page="product-changelog"] .public-roadmap-grid > article h3 { margin: 0 0 6px; }
+body[data-page="product-changelog"] .changelog-period { font-weight: 700; color: var(--green-dark); }
+
+/* Fictional NIST and ISO examples. */
+.csf-fig { display: grid; grid-template-columns: minmax(200px, 320px) minmax(0, 1fr); gap: 20px; align-items: center; margin-bottom: 22px; }
+.csf-ok { fill: var(--yellow-soft); stroke: var(--green); stroke-width: 1.5; }
+.csf-gap { fill: var(--red-soft); stroke: var(--red); stroke-width: 2; stroke-dasharray: 6 4; }
+.csf-govern { fill: var(--green); }
+.csf-label { font: 600 13px var(--font-sans); fill: var(--ink); }
+.csf-label-govern { fill: var(--paper); font: 700 15px var(--font-display); }
+.csf-fig figcaption { font-size: 1rem; color: var(--ink-soft); }
+@media (max-width: 640px) { .csf-fig { grid-template-columns: 1fr; } .csf-wheel { max-width: 320px; margin: 0 auto; } }
+.iso-path { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; position: relative; counter-reset: none; }
+.iso-path::before { content: ""; position: absolute; left: 18px; right: calc(25% - 18px); top: 18px; border-top: 3px solid var(--green); }
+.iso-path li { position: relative; display: grid; gap: 8px; align-content: start; font-weight: 600; font-size: .95rem; }
+.iso-path span { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; background: var(--green); color: var(--paper); font-family: var(--font-display); }
+.iso-path .iso-gap span { background: var(--red); }
+.iso-path .iso-decide span { background: var(--yellow); color: var(--ink); }
+@media (max-width: 640px) {
+    .iso-path { grid-template-columns: 1fr; }
+    .iso-path::before { left: 17px; right: auto; top: 18px; bottom: 18px; border-top: 0; border-left: 3px solid var(--green); }
+    .iso-path li { grid-template-columns: 36px 1fr; align-items: center; column-gap: 12px; }
+}
