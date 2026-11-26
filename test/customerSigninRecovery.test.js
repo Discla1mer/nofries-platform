@@ -60,9 +60,9 @@ function authentication(external) {
     const handler = createAuthCallbackFunction({ env, service, customerEntry: true,
         clearTransactionCookie: external ? clearExternalCustomerTransactionCookie : clearCustomerTransactionCookie,
         ...(external ? { customerTransport: 'external' } : {}) });
-    const invoke = async (started, { missingCookie = false, json = false } = {}) => {
+    const invoke = async (started, { missingCookie = false, json = false, cookies } = {}) => {
         const context = { log: { warn: jest.fn() } };
-        await handler(context, { method: 'POST', headers: { cookie: missingCookie ? '' : cookie(started.cookie),
+        await handler(context, { method: 'POST', headers: { cookie: cookies !== undefined ? cookies : missingCookie ? '' : cookie(started.cookie),
             accept: json ? 'application/json' : 'text/html', 'user-agent': 'Synthetic recovery test', 'x-forwarded-for': '192.0.2.17' },
         body: { code: PRIVATE, state: new URL(started.location).searchParams.get('state') } });
         expect(JSON.stringify(context)).not.toContain(PRIVATE);
@@ -132,6 +132,42 @@ test.each([false, true])('a missing %s customer transaction cookie stays generic
     expect(response.headers.Location).toMatch(withRef(`/login?signin=retry&provider=${external ? 'external' : 'legacy'}`));
     expect(f.exchange).not.toHaveBeenCalled(); expect(f.store.sessions.size).toBe(0);
     expect(f.store.transactions.has(cookieId(started.cookie))).toBe(true);
+});
+
+const CREATING = '__Host-nofries-external-creating=1';
+
+test('account creation that outlives its attempt restarts sign-in once, then falls back to the recovery page', async () => {
+    const f = authentication(true), started = await f.service.beginLogin();
+    const resumed = await f.invoke(started, { cookies: CREATING });
+    expect(resumed.status).toBe(303); expect(resumed.headers.Location).toBe('/api/external-customer-auth/login');
+    expect(resumed.headers['Set-Cookie']).toBe(
+        '__Host-nofries-external-creating=; Path=/; HttpOnly; Secure; SameSite=None; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT');
+    expect(f.exchange).not.toHaveBeenCalled(); expect(f.store.sessions.size).toBe(0);
+    // The marker was cleared, so a second miss is the ordinary recovery page.
+    expect((await f.invoke(started, { missingCookie: true })).headers.Location).toMatch(withRef('/login?signin=retry&provider=external'));
+});
+
+test.each([
+    ['a JSON caller', true, { cookies: CREATING, json: true }],
+    ['a duplicated marker', true, { cookies: CREATING + '; ' + CREATING }],
+    ['a malformed marker', true, { cookies: '__Host-nofries-external-creating=2' }],
+    ['the legacy provider', false, { cookies: CREATING }]
+])('%s never gets the automatic restart', async (_name, external, input) => {
+    const f = authentication(external), started = await f.service.beginLogin();
+    const response = await f.invoke(started, input);
+    if (input.json) expect(response.headers.Location).toBeUndefined();
+    else expect(response.headers.Location).toMatch(withRef(`/login?signin=retry&provider=${external ? 'external' : 'legacy'}`));
+    expect(f.exchange).not.toHaveBeenCalled(); expect(f.store.sessions.size).toBe(0);
+});
+
+test('the marker never restarts a live attempt that fails, and a completed sign-in clears it', async () => {
+    const f = authentication(true), started = await f.service.beginLogin();
+    const done = await f.invoke(started, { cookies: cookie(started.cookie) + '; ' + CREATING });
+    expect(done.headers.Location).toBe('/signup?provider=external');
+    expect(done.headers['Set-Cookie'].filter(value => value.startsWith('__Host-nofries-external-creating=; '))).toHaveLength(1);
+    // Replaying the consumed attempt is a real failure, not a timed-out sign-up.
+    const replay = await f.invoke(started, { cookies: cookie(started.cookie) + '; ' + CREATING });
+    expect(replay.headers.Location).toMatch(withRef('/login?signin=retry&provider=external'));
 });
 
 test.each([false, true])('expired %s customer JSON callback keeps the generic API response', async external => {

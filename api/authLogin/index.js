@@ -9,6 +9,7 @@ const {
     createBrowserAuthService
 } = require('../shared/browserAuth');
 const { apiSecurityHeaders } = require('../shared/securityHeaders');
+const { registrationResumeCookie } = require('../shared/customerSignup/registrationResume');
 
 const { logSafeFailure: logStaffFailure } = require('../shared/browserAuthDiagnostics');
 
@@ -64,7 +65,8 @@ function createAuthLoginFunction(options = {}) {
                 ...(intent === 'create' ? { registration: true } : {}),
                 ...(accountChoice ? { selectAccount: true } : {})
             });
-            context.res = redirect(result.location, result.cookie, rateLimitHeaders(rateLimit), 302);
+            context.res = redirect(result.location, intent === 'create'
+                ? [result.cookie, registrationResumeCookie()] : result.cookie, rateLimitHeaders(rateLimit), 302);
         } catch (error) {
             if (options.customerEntry) logSafeFailure(context, error);
             else logStaffFailure(context, error);
