@@ -50,3 +50,21 @@ describe('Overview chart kit', () => {
         expect(charts.percentNumber(null)).toBeNull();
     });
 });
+
+describe('NCSC function ring', () => {
+    const find = (spec, predicate) => predicate(spec) ? spec : (spec.children || []).filter(child => typeof child === 'object').map(child => find(child, predicate)).find(Boolean);
+    test('draws the reported figure over the "up to" figure with a plain label', () => {
+        const spec = charts.ringSpec(35.7, 64.3, 'Prevent and Protect: 35.7%–64.3% reported as in place', '36–64');
+        expect(spec.attrs).toMatchObject({ role: 'img', 'aria-label': 'Prevent and Protect: 35.7%–64.3% reported as in place' });
+        expect(find(spec, node => node.attrs['data-band'] === 'lower').attrs['stroke-dasharray']).toBe('35.7 100');
+        expect(find(spec, node => node.attrs['data-band'] === 'upper').attrs['stroke-dasharray']).toBe('64.3 100');
+        expect(JSON.stringify(spec)).not.toMatch(/style/);
+    });
+    test('clamps bad input and leaves the track unrotated', () => {
+        const spec = charts.ringSpec(-5, 'x', 'x', '0%');
+        expect(find(spec, node => node.attrs['data-band'] === 'lower').attrs['stroke-dasharray']).toBe('0 100');
+        expect(find(spec, node => node.attrs['data-band'] === 'upper').attrs['stroke-dasharray']).toBe('0 100');
+        const dom = createDom(), svg = charts.draw(dom.document, spec);
+        expect(svg.children[0].getAttribute('transform')).toBeNull();
+    });
+});
