@@ -265,13 +265,14 @@
         return { text: lines.join('\n') };
     }
     // Read-only suggestions for the current catalogue, never evidence or scores.
-    // Narrower questions cannot inherit a broader Partial answer. Storage type,
-    // patch deadlines and EDR are not collected by this catalogue at all.
+    // For v1, narrower questions cannot inherit a broader Partial answer. For
+    // v2, report the actual question and its saved label, not its scoring credit.
     function questionnaireAnswers(assessment, metadata) {
         const title = 'Answers for your insurer or customer questionnaire';
         const footer = 'These are self-assessed answers to check before submitting, not a guarantee an insurer or customer accepts them.';
+        const v2 = isV2(metadata);
         const supported = assessment.status === 'submitted' && profileMatches(assessment.profileRef, metadata.profileRef) &&
-            metadata.profileRef.catalogueSha256 === '32c3f8d154ffe2be9b1270f8fa1234427a05cdea96b231588cce0b147e7d5375';
+            (v2 || metadata.profileRef.catalogueSha256 === '32c3f8d154ffe2be9b1270f8fa1234427a05cdea96b231588cce0b147e7d5375');
         const definitions = [
             ['mfa', 'Is multi-factor authentication (MFA) required for business email and remote access?', 'NF-NCSC-MCSS-MF-01-Q1', false,
                 'Require MFA for business email and every remote-access route, and check for exceptions.',
@@ -301,15 +302,30 @@
                 'Check payment and bank-detail changes using a known phone number or another trusted, separate route.',
                 'Ask accounts for a payment-change record showing the call to a known number or another independent check.']
         ];
+        if (v2) definitions.push(
+            ['supplier-access', '', 'NF-NCSC-CC-SU-01-Q1', true, '', 'Get the supplier access list, sign-in settings and written breach-notification terms.'],
+            ['email-protection', '', 'NF-NCSC-CC-EM-01-Q1', true, '', 'Ask your email provider for the domain protection and phishing filter settings.']
+        );
         const items = definitions.map(function ([id, question, source, allowPartial, action, evidence]) {
-            const responses = supported && source && metadata.questions.some(item => item.id === source)
+            if (v2 && id === 'backup-storage') source = 'NF-NCSC-MCSS-DR-01-Q1';
+            if (v2 && id === 'restore-tests') source = 'NF-NCSC-MCSS-DR-01-Q2';
+            const sourceQuestion = source && metadata.questions.find(item => item.id === source);
+            if (v2 && sourceQuestion) {
+                question = sourceQuestion.prompt;
+                action = sourceQuestion.guidance.startingActions[0];
+                allowPartial = true;
+            }
+            const responses = supported && sourceQuestion
                 ? assessment.responses.filter(item => item.itemId === source) : [];
-            const option = responses.length === 1 ? responses[0].optionId : null;
+            const saved = responses.length === 1 ? responses[0].optionId : null;
+            const option = v2 ? (sourceQuestion && sourceQuestion.responseOptionIds.includes(saved)
+                ? ({ partly: 'partial', ad_hoc: 'partial' }[saved] || saved) : null) : saved;
             const answer = option === 'yes' ? 'Yes' : option === 'no' ? 'No' : option === 'partial' && allowPartial ? 'Partly' : 'Not answered';
             const basis = !source ? 'This assessment does not ask for this detail.'
                 : option === 'partial' && !allowPartial ? 'The broader answer is Partial; it does not confirm this specific detail.'
                 : option === 'not_applicable' ? 'Marked Not applicable in the assessment; this is not confirmation of the control.'
                 : answer === 'Not answered' ? 'The saved answers do not confirm this detail.'
+                : v2 ? 'Your saved answer: ' + metadata.responseOptions.find(item => item.id === saved).label + '. Check the exact coverage before using it.'
                 : 'Based on your saved ' + (option === 'partial' ? 'Partial' : answer) + ' answer; check the exact coverage before using it.';
             return { id: id, question: question, answer: answer, basis: basis, action: 'To answer Yes: ' + action,
                 evidence: answer === 'Yes' ? '' : 'Evidence: ' + evidence };
@@ -1037,7 +1053,7 @@
             section.setAttribute('aria-labelledby', 'ncsc-workshop-title');
             const title = node('summary', '', 'Optional: Download workshop slides'); title.id = 'ncsc-workshop-title';
             section.append(title,
-                node('p', '', 'A workshop companion with explanations and example answers for the 14 questionnaire prompts.'),
+                node('p', '', 'A workshop companion with explanations and example answers for the original 14-question check.'),
                 node('p', '', 'Includes selected NZISM v3.9 starting-point references for further review.'),
                 node('p', 'dashboard-muted', 'Version 2 · Prepared 20 October 2026 (NZDT).'),
                 node('p', 'dashboard-muted', 'Source: No Fries questionnaire adapted from the NCSC Cyber Security Framework and Minimum Cyber Security Standards 2025, with selected NZISM v3.9 references.'));
@@ -1805,7 +1821,7 @@
                 section.append(paymentChecks);
                 panel.append(section, resultHelp('', true));
             }
-            const questionnaireFirst = !isV2(metadata) && (campaign === 'insurance' || campaign === 'supplier');
+            const questionnaireFirst = campaign === 'insurance' || campaign === 'supplier';
             if (questionnaireFirst) renderQuestionnaireAnswers(panel);
             if (questionnaireFirst && campaign === 'insurance') appendBoardSummary();
             if (results) {
@@ -1813,7 +1829,7 @@
             }
             if (results && options.appendFrameworkComparison) options.appendFrameworkComparison(panel);
             renderNextSteps(panel);
-            if (!questionnaireFirst && !isV2(metadata)) renderQuestionnaireAnswers(panel);
+            if (!questionnaireFirst) renderQuestionnaireAnswers(panel);
             if (!results) {
                 panel.append(node('p', 'ncsc-warning', 'Results are unavailable for this submission. Your saved answers remain below. Reopen the assessment to try again.'),
                     button('Retry loading results', async function () {

@@ -80,7 +80,9 @@ test('the sample captures the first campaign before its links become interactive
     const head = html.slice(0, html.indexOf('</head>'));
     expect(head).toContain(campaignScript);
     expect(head).toContain('<meta name="referrer" content="no-referrer">');
-    expect(html.replace(campaignScript, '')).not.toMatch(/<script\b|\son\w+=/i);
+    const countScript = '<script src="/js/free-check-count.js" defer></script>';
+    expect(head).toContain(countScript);
+    expect(html.replace(campaignScript, '').replace(countScript, '')).not.toMatch(/<script\b|\son\w+=/i);
 });
 
 test('NCSC is spelled out at first use and the example figure is explained from the answers', () => {
