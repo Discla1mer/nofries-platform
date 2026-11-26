@@ -1641,11 +1641,15 @@ body[data-page="product-roadmap"] .public-roadmap .roadmap-counts a:not(.button)
 .homepage-mark:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
 .homepage-mark span { display: none; position: absolute; top: calc(100% + 8px); left: 50%; transform: translateX(-50%); width: max-content; max-width: 220px;
     background: var(--ink); color: var(--paper); font: 500 .82rem/1.35 var(--font-sans); padding: 8px 10px; border-radius: var(--radius-small); text-align: left; z-index: 3; }
-.homepage-mark:hover span, .homepage-mark:focus-visible span { display: block; }
+.homepage-mark:is(:hover, :focus-visible, :focus) span { display: block; }
+/* A 44px hit area around the smaller visible dot (WCAG 2.5.8). */
+.homepage-mark::before { content: ""; position: absolute; inset: 50% auto auto 50%; width: 44px; height: 44px; transform: translate(-50%, -50%); border-radius: 50%; }
 .homepage-m1 { left: 23%; top: 4%; }
 .homepage-m2 { left: 50%; top: 4%; }
 .homepage-m3 { left: 93%; top: 4%; }
+.homepage-m1 span { left: -10px; transform: none; }
 .homepage-m3 span { left: auto; right: -10px; transform: none; }
+@media (max-width: 760px) { .homepage-mark span { max-width: min(220px, calc(100vw - 48px)); } }
 
 .homepage-ncsc { width: auto; margin: 8px 0 36px; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 24px; align-items: center;
     padding: 22px 26px; background: var(--paper); border: 1px solid var(--line); border-left: 8px solid var(--red); border-radius: var(--radius); box-sizing: border-box; }

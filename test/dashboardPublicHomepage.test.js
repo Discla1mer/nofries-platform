@@ -175,3 +175,18 @@ test('in-page homepage links move keyboard focus to their target section', () =>
         assert.match(html, new RegExp(`<[a-z]+\\b[^>]*\\bid="${id}"[^>]*\\btabindex="-1"`), `#${id} is not focusable`);
     }
 });
+
+test('the NCSC figure states the survey population exactly as the 2026 tracker does', () => {
+    const strip = html.match(/<section class="homepage-ncsc"[\s\S]*?<\/section>/)[0];
+    assert.match(strip, /<span class="visually-hidden">53% <\/span>of New Zealand SMEs with up to 49 full-time staff experienced a cyber attack or threat in the past six months\./);
+    assert.match(strip, /For SMEs with 20 to 49 full-time staff, it was 76%\./);
+    assert.match(strip, /a survey of 373 SME IT or operational decision makers\./);
+    assert.doesNotMatch(strip, /\bHalf\b|small businesses/);
+});
+
+test('screenshot marks keep tooltips on screen, show on tap and have a 44px hit area', () => {
+    for (const n of [1, 2, 3]) assert.match(html, new RegExp(`class="homepage-mark homepage-m${n}" aria-label="Marker ${n}"`));
+    assert.match(css, /\.homepage-mark:is\(:hover, :focus-visible, :focus\) span \{ display: block; \}/);
+    assert.match(css, /\.homepage-mark::before \{[^}]*width: 44px; height: 44px;/);
+    assert.match(css, /\.homepage-m1 span \{ left: -10px; transform: none; \}/);
+});
