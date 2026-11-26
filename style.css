@@ -583,3 +583,18 @@ body:is([data-page="dashboard-pricing"], [data-page="sample-result"], [data-page
     --green: #4d350a;
     --green-dark: #443009;
 }
+
+/* Tap targets (#441 M1-04): standalone links in footers, the legal contents
+   lists and the scope back link get a 44px touch height. Inline links inside
+   sentences keep their text height, as WCAG 2.5.8 allows. Layout only: no
+   font, colour or texture change. */
+.home-footer > a,
+.legal-contents a,
+.site-footer a,
+.report-footer a,
+.scope-page-header nav a,
+body > .shell > nav > a {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+}
