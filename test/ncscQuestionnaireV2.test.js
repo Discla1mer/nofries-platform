@@ -147,11 +147,45 @@ describe('v2 results in the questionnaire', () => {
         expect(panel.textContent).toContain('Limit supplier access');
         expect(panel.textContent).toContain('Saved answer: Text or email code only. Weight: 2.');
         expect(panel.textContent).toContain('Saved answer: Sometimes, but not written down or checked. Weight: 2.');
-        // The insurer answers map v1 questions only, so they are not offered for a v2 result.
-        expect(panel.querySelector('.ncsc-questionnaire-answers')).toBeNull();
+        const report = questionnaire.questionnaireAnswers(assessment, V2());
+        const output = panel.querySelector('.ncsc-questionnaire-answers');
+        expect(output.querySelectorAll('li')).toHaveLength(11);
+        expect(output.querySelector('textarea').value).toBe(report.text);
+        expect(output.textContent).toContain(report.footer);
         // 9 graded part-credit answers and 5 No: 14 gaps to fix, 2 "I don't know" to check.
         expect(panel.querySelector('.ncsc-verdict').textContent).toBe('You have 14 gaps to fix and 2 answers to check.');
         ui.controller.destroy();
+    });
+
+    test.each([['yes', 'Yes'], ['partly', 'Partly'], ['ad_hoc', 'Partly'], ['no', 'No'],
+        ['unknown', 'Not answered'], ['not_applicable', 'Not answered']])('insurer answers use the v2 source question and its own option: %s', (saved, expected) => {
+        const md = V2(), assessment = { status: 'submitted', profileRef: md.profileRef,
+            scopePopulation: { description: 'Fictional office' }, responses: md.questions.map(q => ({ itemId: q.id, optionId: saved })) };
+        const report = questionnaire.questionnaireAnswers(assessment, md), byId = Object.fromEntries(report.items.map(row => [row.id, row]));
+        for (const id of ['mfa', 'backup-storage', 'restore-tests', 'training', 'incident-plan', 'admin-rights', 'payment-checks', 'supplier-access', 'email-protection']) {
+            expect(byId[id].answer).toBe(expected);
+            expect(byId[id].question).toMatch(/\?$/);
+            if (saved === 'ad_hoc') expect(byId[id].basis).toContain('Sometimes, but not written down or checked');
+        }
+        expect(byId['patch-speed'].answer).toBe('Not answered'); // PA does not ask for a deadline.
+        expect(byId.endpoint.answer).toBe('Not answered'); // Alerts do not attest EDR coverage.
+        expect(byId['restore-tests'].question).toContain('three months');
+        expect(byId['backup-storage'].question).toContain('out of reach of ransomware');
+    });
+
+    test('MFA method does not imply coverage, and backup storage does not imply a restore test', () => {
+        const md = V2(), a = { status: 'submitted', profileRef: md.profileRef, scopePopulation: { description: 'Test' },
+            responses: [{ itemId: 'NF-NCSC-MCSS-MF-01-Q2', optionId: 'mfa_key' },
+                { itemId: 'NF-NCSC-MCSS-DR-01-Q1', optionId: 'yes' }] };
+        const rows = () => Object.fromEntries(questionnaire.questionnaireAnswers(a, md).items.map(item => [item.id, item.answer]));
+        expect(rows()).toMatchObject({ mfa: 'Not answered', 'backup-storage': 'Yes', 'restore-tests': 'Not answered' });
+        a.responses.push(...a.responses);
+        expect(rows()['backup-storage']).toBe('Not answered');
+        a.responses = [{ itemId: 'NF-NCSC-MCSS-MF-01-Q1', optionId: 'mfa_key' }];
+        expect(rows().mfa).toBe('Not answered');
+        a.responses[0].optionId = 'yes';
+        a.profileRef = { ...md.profileRef, sourceCatalogueSha256: 'a'.repeat(64) };
+        expect(Object.values(rows()).every(answer => answer === 'Not answered')).toBe(true);
     });
 
     test('provider and board summaries group v2 answers by credit, with each answer\'s own label', async () => {
@@ -172,6 +206,16 @@ describe('v2 results in the questionnaire', () => {
         expect(section('Not yet confirmed')).toContain('Protect your business email');
         expect(section('Marked not applicable (to be confirmed)')).toContain('Protect and separate your network');
     });
+
+    test.each([[14, ACCEPTED_NCSC_CONTEXT], [16, NCSC_V2_CONTEXT]])(
+        'signed-in progress counts the actual retained questions when either profile is available: %i', async (total, profile) => {
+            const h = await backend(profile); await h.execute(createCommand());
+            const ui = mountUi(h);
+            try {
+                await until(() => listButton(ui)); listButton(ui).click();
+                await until(() => ui.root.textContent.includes('0 of ' + total + ' answered'));
+            } finally { ui.controller.destroy(); }
+        });
 
     test('v1 results are unchanged when v2 metadata is also supplied', async () => {
         const h = await backend(ACCEPTED_NCSC_CONTEXT);
