@@ -3,35 +3,13 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
-const { PUBLIC_ROOT_FILES, PUBLIC_SCRIPT_FILES } = require('../lib/publicAssets');
 const { readPublicPaidPricing } = require('../api/shared/publicPaidPricing');
 const read = file => fs.readFileSync(path.join(__dirname, '..', file), 'utf8');
-const pricePattern = /\$\s*\d/;
 const price = 'NZ$99 + GST per organisation per month or NZ$990 + GST per year (two months free).';
 
-// Uses the public ship lists, plus the separately generated /try document.
-// Staff-only quotes, data fixtures, styles, API responses and dynamically
-// concatenated numbers are outside this literal source check.
-test('price literals are absent outside Pricing and the Browns Bay offer', () => {
-    // /offer is the only local special-offer exception and owns its rates.
-    const pricePages = new Set(['pricing.html', 'offer.html']);
-    const files = [...PUBLIC_ROOT_FILES.filter(f => f.endsWith('.html') && !pricePages.has(f)),
-        ...PUBLIC_SCRIPT_FILES.map(f => 'js/' + f), 'demo/try/document.js'];
-    for (const file of files) {
-        const normalized = read(file).replace(/&dollar;|&#(?:36|x24);/gi, '$').replace(/&nbsp;/g, ' ');
-        expect([file, pricePattern.test(normalized)]).toEqual([file, false]);
-    }
-});
-
-test('the protected consumer dashboard contains prices only in its flagged paid card and terms', () => {
-    const shell = read('api/shared/protectedAssets/dashboardShell.js');
-    const paidPriceLines = shell.split('\n').filter(line => pricePattern.test(line));
-    expect(paidPriceLines).toHaveLength(2);
-    expect(paidPriceLines[0]).toContain("card.append(element('p', '', '" + price);
-    expect(paidPriceLines[1]).toContain("const terms = element('p', '', '" + price);
-    expect(read('api/shared/protectedAssets/ncscQuestionnaire.js')).not.toMatch(pricePattern);
-});
-
+// Dollar figures may appear on any page where they help (owner decision, 26 Nov 2026);
+// pricing is grouped by section, not banned elsewhere. The paid rate still only
+// comes back from the API when the paid-frameworks flag is on.
 test.each([undefined, 'false', 'TRUE', 'true'])('pricing only returns a rate when enabled: %s', flag => {
     const result = readPublicPaidPricing({ NOFRIES_PAID_FRAMEWORKS_ENABLED: flag });
     expect(result.status).toBe(200);
