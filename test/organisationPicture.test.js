@@ -1413,7 +1413,8 @@ test('top three gaps put priority-tier controls first, then not-in-place before 
     items.forEach((item, index) => {
         const question = questions[[11, 4, 5][index]];
         assert.ok(item.text.includes('Why it matters:') && item.text.includes(question.guidance.summary));
-        assert.ok(item.text.includes('What to do next:') && item.text.includes(question.smallBusiness.meaning));
+        assert.ok(item.text.includes('What to do next:') && item.text.includes(question.smallBusiness.checks[0]));
+        assert.ok(!item.text.includes(question.smallBusiness.meaning), 'the advice does not restate the question (#441 RANGI-13)');
         assert.doesNotMatch(item.text, /Ask your IT provider to help with this\./);
     });
     assert.match(items[0].text, /Your answer: No/);
