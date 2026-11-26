@@ -838,7 +838,7 @@ test.each([false, true])('production registration requires the SDK to retain its
         for (const field of ['state', 'nonce']) expect(url.searchParams.get(field)).toBe(transaction[field]);
         expect(url.searchParams.get('state')).not.toBe(new URL(ordinary.headers.location).searchParams.get('state'));
         expect(url.searchParams.get('nonce')).not.toBe(new URL(ordinary.headers.location).searchParams.get('nonce'));
-        expect(registration.headers['set-cookie'][0]).toContain('Max-Age=300');
+        expect(registration.headers['set-cookie'][0]).toContain('Max-Age=1200');
     } else {
         expect(registration.status).toBe(503); expect(registration.body.code).toBe('browser_auth_unavailable');
         expect(registration.headers['set-cookie']).toBeUndefined(); expect(snapshot()).toEqual(before);
