@@ -1039,7 +1039,8 @@
             const section = node('details', 'ncsc-provenance');
             section.append(node('summary', '', 'About this questionnaire and its sources'));
             [metadata.description, metadata.claim, metadata.attribution].forEach(function (text) { if (text) section.append(node('p', '', text)); });
-            (Array.isArray(metadata.limitations) ? metadata.limitations : [metadata.limitations]).forEach(function (text) { if (text) section.append(node('p', '', text)); });
+            // The legal-review limitation is an internal release condition, not reader guidance (#441 RANGI-16).
+            (Array.isArray(metadata.limitations) ? metadata.limitations : [metadata.limitations]).forEach(function (text) { if (text && !/^Paid or customer-facing release requires/.test(text)) section.append(node('p', '', text)); });
             if (metadata.licence) {
                 const link = node('a', '', metadata.licence.label + ' (opens in a new tab)');
                 if (metadata.licence.url === 'https://creativecommons.org/licenses/by/4.0/') link.href = metadata.licence.url;

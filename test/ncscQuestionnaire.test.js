@@ -1894,6 +1894,8 @@ describe('questionnaire form accessibility', () => {
         });
         const licence = ui.root.querySelector('.ncsc-provenance').querySelector('a');
         expect(licence.target).toBe('_blank'); expect(licence.rel).toBe('noopener noreferrer');
+        const provenance = ui.root.querySelector('.ncsc-provenance').textContent;
+        expect(provenance).not.toContain('Paid or customer-facing release'); expect(provenance).toContain('does not test every cumulative Minimum Standard');
         expect(h.records).toHaveLength(1); ui.controller.destroy();
     });
 

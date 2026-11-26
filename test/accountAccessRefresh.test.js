@@ -302,6 +302,15 @@ test('Account shows the email once when the signed-in name is the same address',
     expect(identity.querySelector('strong')).toBeNull();
 });
 
+test('Account hides the "unknown" name Microsoft gives an unset display name', async () => {
+    const h = harness({ hash: '#overview', accountMenu: true }); await flush();
+    await h.open(state(A, GA, { purpose: 'customer', accountType: 'company', accountLabel: 'synthetic@example.test', accountName: 'unknown' }));
+    const identity = h.document.getElementById('dashboardAccountIdentity');
+    expect(identity.textContent).toContain('synthetic@example.test');
+    expect(identity.textContent).not.toMatch(/unknown/i);
+    expect(identity.querySelector('strong')).toBeNull();
+});
+
 test('the signed-in name is isolated from the email beside it', async () => {
     const h = harness({ hash: '#overview', accountMenu: true }); await flush();
     await h.open(state(A, GA, { purpose: 'customer', accountType: 'company', accountLabel: 'synthetic@example.test', accountName: 'Synthetic Customer' }));
