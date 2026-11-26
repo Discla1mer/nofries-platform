@@ -173,6 +173,11 @@ test('migration 0025 grants only SELECT and DELETE to the new capability and cha
                 VALUES ($1,$2,'synthetic-product','cyber_security','nf-nist-csf-2-0-core','2026-09-08.1',1,false,$3,$4,$5)`,
             [first.scope.tenantId, first.scope.organisationId, crypto.randomUUID(), c.actor, '0'.repeat(64)]);
         });
+        // The organisation's own profile (0035): kept on reset, removed on delete.
+        await db.query(`INSERT INTO nofries.dashboard_organisation_profiles
+            (tenant_id,organisation_id,revision,website,industry,region,size_band,updated_at,updated_by)
+            VALUES ($1,$2,1,'https://example.co.nz/','retail','auckland','6-20',now(),$3)`,
+        [first.scope.tenantId, first.scope.organisationId, c.actor]);
         return { c, scope: first.scope, source, root, assigned, ncsc, tenants: [first.scope.tenantId, second.scope.tenantId] };
     }
     // Row counts per table for one account, read by the CI owner (superuser).
@@ -349,6 +354,7 @@ test('migration 0025 grants only SELECT and DELETE to the new capability and cha
         expect(before.email_outbox).toBe(1); expect(before.dashboard_contact_requests).toBe(1); expect(before.dashboard_framework_revisions).toBe(2);
         expect(before.dashboard_improvement_revisions).toBe(2); expect(before.dashboard_improvement_heads).toBe(1);
         expect(before.dashboard_ncsc_assessment_revisions).toBe(3); expect(before.dashboard_paid_framework_access).toBe(1);
+        expect(before.dashboard_organisation_profiles).toBe(1);
         const controlBinding = await boundStart(db, sentinel);
         expect(controlBinding).toHaveLength(1);
         const result = await createAccountWipeRepository(pool).delete(wipeTarget(doomed));
@@ -365,10 +371,12 @@ test('migration 0025 grants only SELECT and DELETE to the new capability and cha
         expect(before.dashboard_contact_requests).toBe(1); expect(before.dashboard_framework_revisions).toBe(2);
         expect(before.dashboard_improvement_revisions).toBe(2); expect(before.dashboard_improvement_heads).toBe(1);
         expect(before.dashboard_ncsc_assessment_revisions).toBe(3); expect(before.dashboard_paid_framework_access).toBe(1);
+        expect(before.dashboard_organisation_profiles).toBe(1);
         const controlBinding = await boundStart(db, sentinel);
         expect(controlBinding).toHaveLength(1);
         await createAccountWipeRepository(pool).reset(wipeTarget(a));
         const after = await footprint(db, a);
+        expect(after.dashboard_organisation_profiles).toBe(1);
         for (const table of RESET_TABLES) expect(after[table]).toBe(0);
         for (const table of DELETE_TENANT_TABLES.filter(t => !RESET_TABLES.includes(t))) expect(after[table]).toBe(before[table]);
         expect(await footprint(db, sentinel)).toEqual(sentinelBefore);
