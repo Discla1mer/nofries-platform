@@ -85,6 +85,16 @@ test('the 90-day managed security offer has a fixed topic', () => {
 });
 
 test.each([
+    ['essentials', 'Managed IT Essentials (NZ$59 + GST per user / month)'],
+    ['managed', 'Managed IT Managed (NZ$99 + GST per user / month)'],
+    ['secure', 'Managed IT Secure (NZ$139 + GST per user / month)']
+])('the %s Managed IT tier has a fixed topic and pricing links to it', (tier, label) => {
+    expect(land('?service=managed_it_' + tier).window.enquiryTopic()).toBe(label);
+    const pricing = fs.readFileSync(path.join(__dirname, '../pricing.html'), 'utf8');
+    expect(pricing).toContain('href="/contact.html?service=managed_it_' + tier + '"');
+});
+
+test.each([
     ['?service=not_a_service'],
     ['?service=%3Cscript%3Ealert(1)%3C%2Fscript%3E'],
     ['?service=__proto__'],
