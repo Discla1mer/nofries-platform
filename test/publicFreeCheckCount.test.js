@@ -19,19 +19,20 @@ test.each(['true', 'false', 'TRUE', undefined])('three public current-check coun
         expect(html).toContain('<script src="/js/free-check-count.js" defer></script>');
         const isHome = file === 'index.html';
         if (isHome) expect(html).toMatch(/id="homepageLead"[^>]*>[^<]*14 questions/);
-        else expect(html.match(/<span data-free-check-count>14<\/span>/g)).toHaveLength(1);
+        else expect(html.match(/<span data-free-check-count>14 questions<\/span>/g)).toHaveLength(1);
         const nodes = [{ nodeType: 3, data: 'Answer 14 questions.' }, { nodeType: 3, data: 'Answer 14 questions about how your business works today.' },
             { nodeType: 3, data: 'Check payment changes with a known number.' }];
-        const count = { textContent: '14' };
+        const count = { textContent: '14 questions' };
         const fetch = jest.fn(async () => ({ ok: true, json: async () => reply.body }));
         vm.runInNewContext(read('js/free-check-count.js'), { fetch, document: {
             querySelectorAll: selector => selector === '[data-free-check-count]' ? (isHome ? [] : [count])
                 : (isHome ? nodes.map(text => ({ childNodes: [text] })) : []) } });
         await new Promise(resolve => setImmediate(resolve));
         expect(fetch).toHaveBeenCalledWith('/api/pricing/paid', expect.objectContaining({ credentials: 'omit', cache: 'no-store', referrerPolicy: 'no-referrer' }));
-        const expected = flag === 'true' ? '16' : '14';
+        const expected = flag === 'true' ? '14 questions (16 if your organisation uses the updated check)' : '14 questions';
         if (isHome) {
-            expect(nodes.slice(0, 2).every(n => n.data.includes(expected + ' questions'))).toBe(true);
+            expect(nodes[0].data).toBe('Answer ' + expected + '.');
+            expect(nodes[1].data).toBe('Answer ' + expected + ' about how your business works today.');
             expect(nodes[2].data).toBe('Check payment changes with a known number.');
         } else expect(count.textContent).toBe(expected);
     }

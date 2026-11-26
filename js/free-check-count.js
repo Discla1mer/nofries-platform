@@ -9,12 +9,15 @@
         headers: { Accept: 'application/json' } })
         .then(response => response.ok ? response.json() : {})
         .then(body => {
-            if (body?.freeCheckQuestions !== 16) return;
-            counts.forEach(node => { node.textContent = '16'; });
+            if (body?.updatedFreeCheckQuestions !== 16) return;
+            // #636 also requires the organisation's product to list v2. An
+            // anonymous page cannot know that grant, or a saved check's version.
+            const labelledCount = '14 questions (16 if your organisation uses the updated check)';
+            counts.forEach(node => { node.textContent = labelledCount; });
             // The home hero can be replaced by campaign copy. Never replace the
             // whole paragraph or touch examples, headings, links or other numbers.
             home.forEach(node => node.childNodes.forEach(child => {
-                if (child.nodeType === 3) child.data = child.data.replace(/\b14 questions\b/g, '16 questions');
+                if (child.nodeType === 3) child.data = child.data.replace(/\b14 questions\b/g, labelledCount);
             }));
         })
         .catch(() => { /* The original public wording remains visible. */ });

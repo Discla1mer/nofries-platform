@@ -207,6 +207,16 @@ describe('v2 results in the questionnaire', () => {
         expect(section('Marked not applicable (to be confirmed)')).toContain('Protect and separate your network');
     });
 
+    test.each([[14, ACCEPTED_NCSC_CONTEXT], [16, NCSC_V2_CONTEXT]])(
+        'signed-in progress counts the actual retained questions when either profile is available: %i', async (total, profile) => {
+            const h = await backend(profile); await h.execute(createCommand());
+            const ui = mountUi(h);
+            try {
+                await until(() => listButton(ui)); listButton(ui).click();
+                await until(() => ui.root.textContent.includes('0 of ' + total + ' answered'));
+            } finally { ui.controller.destroy(); }
+        });
+
     test('v1 results are unchanged when v2 metadata is also supplied', async () => {
         const h = await backend(ACCEPTED_NCSC_CONTEXT);
         const ids = ACCEPTED_NCSC_CONTEXT.questionIds;
