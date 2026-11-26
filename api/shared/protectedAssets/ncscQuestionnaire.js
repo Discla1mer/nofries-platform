@@ -959,10 +959,16 @@
         function displayedAnswer(question) {
             return acknowledged.status === 'submitted' ? savedAnswer(question.id) : drafts.get(question.id).value;
         }
+        // An answer counts once it can be saved: a Not applicable answer needs
+        // its explanation first (#441 RANGI-14).
+        function answerComplete(value) {
+            const option = optionById.get(value.optionId);
+            return !!option && (option.applicable || !!value.rationale && validText(value.rationale.text));
+        }
         function unansweredIndex(start) {
             for (let offset = 1; offset <= questions.length; offset += 1) {
                 const index = (start + offset) % questions.length;
-                if (displayedAnswer(questions[index]).optionId === null) return index;
+                if (!answerComplete(displayedAnswer(questions[index]))) return index;
             }
             return -1;
         }
@@ -975,7 +981,7 @@
         }
         function updateQuestionNavigation() {
             if (!live() || !acknowledged || !questionProgress) return;
-            const answered = questions.filter(question => displayedAnswer(question).optionId !== null).length;
+            const answered = questions.filter(question => answerComplete(displayedAnswer(question))).length;
             const missing = questions.length - answered;
             questionProgress.textContent = answered + ' of ' + questions.length + ' answered · ' +
                 (missing ? 'About ' + missing + ' min left' : 'Complete');
