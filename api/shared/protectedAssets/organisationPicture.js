@@ -849,7 +849,7 @@
                     if (!live(token)) return boardBlock;
                     return questionnaire.boardSummaryBlock(node, button, win, detail, selectedMetadata(),
                         id + '-board-summary', status, boardBlock,
-                        (board, printed, copy, print) => boardPlanControls(handoff, boardBlock, board, printed, copy, print));
+                        (board, printed, copy, print) => boardPlanControls(handoff, boardBlock, board, printed, copy, print), displayedGaps);
                 };
                 if (options.boardExportGate) handoff.append(options.boardExportGate(() => boardExport(node('div', 'picture-board-summary'))));
                 else if (typeof options.readBoardPlan === 'function' && typeof options.openAction === 'function') {
