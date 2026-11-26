@@ -2,14 +2,14 @@
 const assert = require('node:assert/strict');
 
 // Exercise the public visitor's route. Only read local pages; never send an enquiry.
-module.exports = async function checkBrownsBayOffer(browser, base) {
+module.exports = async function checkLaunchOffer(browser, base) {
     const context = await browser.newContext({ viewport: { width: 375, height: 812 } });
     try {
         const page = await context.newPage();
         await page.route('**/*', route => new URL(route.request().url()).origin === base &&
             route.request().method() === 'GET' ? route.continue() : route.abort());
         await page.goto(base + '/');
-        const link = page.getByRole('link', { name: 'Browns Bay Local Offer' });
+        const link = page.getByRole('link', { name: 'Special Launch Offer' });
         await link.focus(); await page.keyboard.press('Enter');
         await page.waitForURL(base + '/offer');
         await page.getByRole('heading', { level: 1 }).waitFor();
