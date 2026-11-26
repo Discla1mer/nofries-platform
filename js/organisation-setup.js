@@ -38,7 +38,7 @@
         window.location.replace('/signup?provider=invalid'); return;
     }
     const recoveries = query ? query.getAll('signin') : [];
-    const signInRecovery = recoveries.length === 1 && ['retry', 'expired', 'account'].includes(recoveries[0])
+    const signInRecovery = recoveries.length === 1 && ['retry', 'expired', 'account', 'busy'].includes(recoveries[0])
         ? recoveries[0] : undefined;
     // Support references are display-only (NF- plus six characters); anything else is dropped.
     const references = query ? query.getAll('ref') : [];
@@ -246,6 +246,8 @@
             ? 'This sign-in attempt has expired or is no longer valid. Start secure sign-in again with the same email. Your saved work is kept.'
             : signInRecovery === 'account'
             ? 'Your sign-in worked, but your No Fries account is not active. Email hello@nofries.nz' + (supportReference ? ' and quote ' + supportReference : '') + ' so we can restore access. Your saved work is kept.'
+            : signInRecovery === 'busy'
+            ? 'Your sign-in worked, but No Fries has reached its limit for new accounts today. Come back tomorrow and sign in with the same email and password.'
             : signInRecovery === 'retry'
             ? 'Sign-in did not finish. Try secure sign-in again, or verify the same email to recover access. Your saved work is kept.' : '';
         byId('organisation-returning').hidden = !returningAvailable || value.state === 'verified' || legacySignIn;

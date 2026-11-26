@@ -66,7 +66,12 @@ function createExternalCustomerIdentityPolicy({ profile, records,
             const record = await current(identity);
             if (record === null && allowNewSignup !== true) fail();
             if (record === null) {
-                await signupAdmission.reserve(identity.subjectKey);
+                // The shared daily ceiling on new accounts is not a failed
+                // sign-in. Name it, so the visitor is not told to start again.
+                try { await signupAdmission.reserve(identity.subjectKey); } catch (error) {
+                    if (error?.code === 'setup_rate_limited' && error.contended !== true) throw new BrowserAuthError(429, 'browser_auth_signup_capacity_reached');
+                    throw error;
+                }
                 return freeze({ stage: 'setup', subjectKey: identity.subjectKey,
                     email: proof.email, verifiedAt: proof.verifiedAt, expiresAt: proof.expiresAt,
                     providerKey, authentication: proof });
