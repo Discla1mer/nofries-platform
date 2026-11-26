@@ -31,6 +31,10 @@
     const SERVICE_TOPICS = {
         // The standing paid offer (pricing.html), named from results and Services.
         managed_security_90: '90-day managed security',
+        // Managed IT tiers on pricing.html (#441 M1-03).
+        managed_it_essentials: 'Managed IT Essentials (NZ$59 + GST per user / month)',
+        managed_it_managed: 'Managed IT Managed (NZ$99 + GST per user / month)',
+        managed_it_secure: 'Managed IT Secure (NZ$139 + GST per user / month)',
         fractional_advisory: 'Fractional CIO, CTO and CISO',
         managed_endpoint: 'IRMM / RMM monitoring',
         endpoint_security: 'MDR / endpoint security',
