@@ -17,3 +17,15 @@ test('provider follow-ups put tier-1 gaps first, No before Partial within a tier
     const order = questionnaire.providerSummary(assessment, metadata).items.map(item => item.title.slice(0, item.title.lastIndexOf(' — ')));
     expect(order).toEqual([byCode('MF'), byCode('PA'), byCode('DR'), byCode('PM'), byCode('RP'), byCode('AI'), byCode('SA')].map(control));
 });
+
+test('scoring v2 follow-ups keep No before Partial and do not apply the accepted-profile tiers', () => {
+    const { createNcscQuestionnaireMetadataV2 } = require('../api/shared/ncscQuestionnaireMetadata');
+    const metadata = createNcscQuestionnaireMetadataV2();
+    const ids = metadata.questions.map(question => question.id);
+    const pa = ids.find(id => id.includes('-PA-01-')), pm = ids.find(id => id.includes('-PM-01-'));
+    const assessment = { scopePopulation: { description: 'Synthetic scope' }, submission: { submittedAt: '2026-11-26T00:00:00.000Z' },
+        responses: ids.map(itemId => ({ itemId, optionId: itemId === pa ? 'partly' : itemId === pm ? 'no' : itemId.includes('-MF-01-Q2') ? 'mfa_key' : 'yes' })) };
+    const items = questionnaire.providerSummary(assessment, metadata).items;
+    expect(items).toHaveLength(2);
+    expect(items[0].title).toContain('password manager');
+});
