@@ -837,6 +837,7 @@ test.each([false, true])('production registration requires the SDK to retain its
         expect(transaction.expiresAt - transaction.issuedAt).toBe(300000); expect(transaction).not.toHaveProperty('registration');
         for (const field of ['state', 'nonce']) expect(url.searchParams.get(field)).toBe(transaction[field]);
         expect(url.searchParams.get('state')).not.toBe(new URL(ordinary.headers.location).searchParams.get('state'));
+        expect(registration.headers['set-cookie'][1]).toBe('__Host-nofries-external-creating=1; Path=/; HttpOnly; Secure; SameSite=None; Max-Age=3600');
         expect(url.searchParams.get('nonce')).not.toBe(new URL(ordinary.headers.location).searchParams.get('nonce'));
         expect(registration.headers['set-cookie'][0]).toContain('Max-Age=300');
     } else {
