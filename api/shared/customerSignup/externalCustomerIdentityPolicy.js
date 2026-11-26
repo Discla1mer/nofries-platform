@@ -69,7 +69,7 @@ function createExternalCustomerIdentityPolicy({ profile, records,
                 // The shared daily ceiling on new accounts is not a failed
                 // sign-in. Name it, so the visitor is not told to start again.
                 try { await signupAdmission.reserve(identity.subjectKey); } catch (error) {
-                    if (error?.code === 'setup_rate_limited') throw new BrowserAuthError(429, 'browser_auth_signup_capacity_reached');
+                    if (error?.code === 'setup_rate_limited' && error.contended !== true) throw new BrowserAuthError(429, 'browser_auth_signup_capacity_reached');
                     throw error;
                 }
                 return freeze({ stage: 'setup', subjectKey: identity.subjectKey,

@@ -105,6 +105,7 @@ test('the daily new-account limit gets its own outcome, log code and screen, not
 
 test.each([[Object.assign(new Error('x'), { code: 'setup_rate_limited' }), 'browser_auth_signup_capacity_reached'],
     [Object.assign(new Error('x'), { code: 'setup_unavailable' }), 'setup_unavailable'],
+    [Object.assign(new Error('x'), { code: 'setup_rate_limited', contended: true }), 'setup_rate_limited'],
     [new Error('external_signup_admission_unavailable'), undefined]])(
     'only an exhausted new-account limit is named at first admission (%#)', async (failure, code) => {
         const { createExternalCustomerIdentityPolicy } = require('../api/shared/customerSignup/externalCustomerIdentityPolicy');
@@ -126,3 +127,17 @@ test.each([[Object.assign(new Error('x'), { code: 'setup_rate_limited' }), 'brow
             await expect(attempt).rejects.toMatchObject({ statusCode: 429, code });
         } else await expect(attempt).rejects.toBe(failure);
     });
+
+test('a full daily limit and lost write races are told apart by the budget itself', async () => {
+    const { reserveSetupGlobalBudget } = require('../api/shared/organisationSetup');
+    const key = n => String(n).padStart(64, 'a'), at = Date.parse('2026-11-27T00:00:00.000Z');
+    const records = new Map();
+    const store = { load: async k => records.has(k) ? { record: records.get(k), version: 1 } : null,
+        create: async (k, v) => { records.set(k, v); return true; }, replace: async (k, _version, v) => { records.set(k, v); return true; } };
+    for (let i = 0; i < 20; i++) await reserveSetupGlobalBudget(store, at, key(i));
+    const full = await reserveSetupGlobalBudget(store, at, key(20)).catch(error => error);
+    expect(full).toMatchObject({ statusCode: 429, code: 'setup_rate_limited' }); expect(full.contended).toBeUndefined();
+    const racing = { load: async () => null, create: async () => false, replace: async () => false };
+    expect(await reserveSetupGlobalBudget(racing, at, key(1)).catch(error => error))
+        .toMatchObject({ statusCode: 429, code: 'setup_rate_limited', contended: true });
+});
