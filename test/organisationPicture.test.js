@@ -1515,6 +1515,10 @@ function summarySource() {
     const fixtures = buildFixtures();
     return { questionnaire: require('../api/shared/protectedAssets/ncscQuestionnaire'), record: mixed(), metadata: fixtures.metadata };
 }
+// #441 M1-13: the board summary opens with the on-screen top gaps; strip that
+// section to compare the rest with the answers-only summary.
+function withoutTopGaps(text) { return text.replace(/\nWhat needs attention first:(\n\d+\. [^\n]*)+\n/, ''); }
+
 describe('next step under the top gaps', () => {
     const reply = (status, body) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
     async function withEnquiry(fetch) {
@@ -1584,7 +1588,8 @@ describe('next step under the top gaps', () => {
         const board = handoff.querySelectorAll('textarea')[1], labels = handoff.querySelectorAll('label');
         assert.ok(board); assert.equal(labels[1].htmlFor, board.id); assert.equal(board.readOnly, true);
         const { questionnaire, record, metadata } = summarySource();
-        assert.equal(board.value, questionnaire.boardSummary(record, metadata).text);
+        assert.equal(withoutTopGaps(board.value), questionnaire.boardSummary(record, metadata).text);
+        assert.match(board.value, /What needs attention first:\n1\. /);
         assert.match(board.value, /^Cyber security position: summary for the board or insurer\nScope: Synthetic office and cloud scope\./);
         assert.match(board.value, /Not certification or independent assurance\./);
         assert.match(board.value, /Next steps agreed \(owner and date\): $/);

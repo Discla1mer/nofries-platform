@@ -29,3 +29,18 @@ test('scoring v2 follow-ups keep No before Partial and do not apply the accepted
     expect(items).toHaveLength(2);
     expect(items[0].title).toContain('password manager');
 });
+
+test('the board summary opens with the top gaps, in order, before the status groups (#441 M1-13)', () => {
+    const metadata = createNcscQuestionnaireMetadata();
+    const ids = metadata.questions.map(question => question.id);
+    const assessment = { scopePopulation: { description: 'Synthetic scope' }, submission: { submittedAt: '2026-11-26T00:00:00.000Z' },
+        responses: ids.map(itemId => ({ itemId, optionId: 'yes' })) };
+    const gaps = [{ title: 'Data Recovery', answer: 'Partly' }, { title: 'Least Privilege', answer: 'No' }];
+    const text = questionnaire.boardSummary(assessment, metadata, gaps).text;
+    const first = text.indexOf('What needs attention first:');
+    expect(first).toBeGreaterThan(-1);
+    expect(text.indexOf('1. Data Recovery (your answer: Partly)')).toBeGreaterThan(first);
+    expect(text.indexOf('2. Least Privilege (your answer: No)')).toBeGreaterThan(text.indexOf('1. Data Recovery'));
+    expect(text.indexOf('In place:')).toBeGreaterThan(text.indexOf('2. Least Privilege'));
+    expect(questionnaire.boardSummary(assessment, metadata).text).not.toContain('What needs attention first');
+});

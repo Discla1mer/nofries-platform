@@ -292,6 +292,10 @@ async function until(predicate, label = 'UI state') {
 }
 const currentQuestion = ui => questionIndex(ui.root, metadata().questions);
 const navigate = (ui, index) => goToQuestion(ui.root, metadata().questions, index);
+// #441 M1-13: the board summary opens with the on-screen top gaps; strip that
+// section to compare the rest with the answers-only summary.
+function withoutTopGaps(text) { return text.replace(/\nWhat needs attention first:(\n\d+\. [^\n]*)+\n/, ''); }
+
 function choose(ui, index, option, rationale) {
     navigate(ui, index);
     const id = metadata().questions[index].id, input = byId(ui, `ncsc-answer-${id}-${option}`);
@@ -3911,7 +3915,7 @@ describe('campaign Results next steps', () => {
             expect(dom.window.sessionStorage.setItem).not.toHaveBeenCalled(); expect(dom.window.sessionStorage.removeItem).not.toHaveBeenCalled();
             if (campaign === 'board' || campaign === 'insurance') {
                 control(ui, 'Copy board summary').click();
-                expect(dom.window.navigator.clipboard.writeText).toHaveBeenCalledWith(renderer.boardSummary(projectNcscDetail(before[0]), metadata()).text);
+                expect(withoutTopGaps(dom.window.navigator.clipboard.writeText.mock.calls.at(-1)[0])).toBe(renderer.boardSummary(projectNcscDetail(before[0]), metadata()).text);
                 control(ui, 'Print board summary').click(); expect(dom.window.print).toHaveBeenCalledTimes(1);
             }
             await until(() => panel.querySelector('.picture-next-steps-help').querySelector('a')?.href === '/contact.html?service=managed_security_90');
@@ -3960,7 +3964,11 @@ describe('campaign Results next steps', () => {
                 action.click();
                 expect(ui.document.activeElement).toBe(byId(ui, 'ncsc-results-top-gaps'));
             }
-            expect(byId(ui, 'ncsc-board-summary').value).toBe(renderer.boardSummary(projectNcscDetail([...h.versions.values()][0]), metadata()).text);
+            const boardText = byId(ui, 'ncsc-board-summary').value;
+            expect(withoutTopGaps(boardText)).toBe(renderer.boardSummary(projectNcscDetail([...h.versions.values()][0]), metadata()).text);
+            const shown = [...ui.root.querySelectorAll('#ncsc-results-top-gaps ~ * h4, .ncsc-ranked-gaps h4')].map(node => node.textContent);
+            expect(boardText.includes('What needs attention first:')).toBe(answer === 'no');
+            shown.forEach((title, index) => expect(boardText).toContain((index + 1) + '. ' + title + ' (your answer: '));
         } finally { ui.controller.destroy(); }
     });
     test('reads only canonical stored tags, never URL, helper, localStorage or blocked storage', () => {

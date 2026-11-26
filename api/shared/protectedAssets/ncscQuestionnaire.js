@@ -257,12 +257,15 @@
     // (#441): what is in place, partly in place, not in place and not yet
     // known, by control, in the customer's own words. Self-reported, so it
     // says so, and the next-step line is left for the customer to fill in.
-    function boardSummary(assessment, metadata) {
+    // gaps: the ranked top gaps shown on screen (#441 M1-13). The board summary
+    // opens with them, in the same order, before the answers grouped by status.
+    function boardSummary(assessment, metadata, gaps) {
         const optionOf = function (id) { const response = assessment.responses.find(function (item) { return item.itemId === id; }); return response ? response.optionId : null; };
         const groups = [['yes', 'In place'], ['partial', 'Partly in place'], ['no', 'Not in place yet'], ['unknown', 'Not yet confirmed'], ['not_applicable', 'Marked not applicable (to be confirmed)']];
         const lines = ['Cyber security position: summary for the board or insurer', 'Scope: ' + assessment.scopePopulation.description,
             'Assessed: ' + localDate(assessment.submission.submittedAt),
             'Basis: self-assessment using the No Fries questionnaire adapted from New Zealand NCSC guidance. Not certification or independent assurance.'];
+        if (Array.isArray(gaps) && gaps.length) lines.push('', 'What needs attention first:', ...gaps.map(function (gap, index) { return (index + 1) + '. ' + gap.title + ' (your answer: ' + gap.answer + ')'; }));
         groups.forEach(function (group) {
             const titles = [];
             metadata.questions.filter(function (question) { return answerGroup(optionOf(question.id)) === group[0]; }).forEach(function (question) {
@@ -366,10 +369,10 @@
     }
     // Shared with Overview so campaign presentation keeps the same copy, print,
     // enquiry availability and representative-details controls.
-    function boardSummaryBlock(node, button, win, detail, metadata, inputId, status, boardBlock = node('div', 'picture-board-summary'), addPlanControls) {
+    function boardSummaryBlock(node, button, win, detail, metadata, inputId, status, boardBlock = node('div', 'picture-board-summary'), addPlanControls, gaps) {
         const boardLabel = node('label', '', 'Summary for your board or insurer');
         const board = node('textarea', 'ncsc-textarea'); board.id = inputId; boardLabel.htmlFor = board.id;
-        board.readOnly = true; board.rows = 8; board.value = boardSummary(detail, metadata).text;
+        board.readOnly = true; board.rows = 8; board.value = boardSummary(detail, metadata, gaps).text;
         const boardPrinted = node('pre', 'picture-summary-print picture-board-print', board.value); boardPrinted.setAttribute('aria-hidden', 'true');
         const boardCopy = button('Copy board summary', () => copySummary(win, board, status));
         boardCopy.classList.add('dashboard-button-secondary'); boardBlock.append(boardLabel, board, boardPrinted);
@@ -1816,7 +1819,7 @@
                 const section = node('section', 'ncsc-board-next-step picture-summary');
                 const copied = node('p', 'dashboard-muted'); copied.setAttribute('role', 'status');
                 section.append(node('h3', '', 'Summary for your board or insurer'),
-                    boardExportGate(() => boardSummaryBlock(node, button, win, acknowledged, metadata, 'ncsc-board-summary', copied)), copied);
+                    boardExportGate(() => boardSummaryBlock(node, button, win, acknowledged, metadata, 'ncsc-board-summary', copied, undefined, undefined, topGaps(results, metadata))), copied);
                 if (campaign === 'board' && topGaps(results, metadata, 1).length) {
                     section.append(node('p', '', 'Use a reported gap to agree a next action, an owner and a date with your board.'),
                         button('Go to your top gaps', function () {

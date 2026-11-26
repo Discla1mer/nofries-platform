@@ -32,7 +32,9 @@ async function reserveSetupBudget(store, kind, identity, period, limit, at, rese
             ...(reservations.length || reservationKey ? { reservations: reservationKey ? [...reservations, reservationKey] : reservations } : {}) };
         if (loaded ? await store.replace(key, loaded.version, next) : await store.create(key, next)) return;
     }
-    fail(429, 'setup_rate_limited');
+    // Lost every write race: the limit may not be reached, so trying again can
+    // succeed. Same code and status as before; callers may read the marker.
+    throw Object.assign(new OrganisationSetupError(429, 'setup_rate_limited'), { contended: true });
 }
 // One existing durable daily ceiling, shared by legacy verification requests and
 // first external setup admission across every process and runtime instance.
