@@ -972,8 +972,15 @@ test('native discovery accepts only explicit loopback test URLs and preserves th
             await example.assessments.executeNcscAssessment(example.context, saveCommand(assessmentId, 0, 'save-' + assessmentId, v2Responses()));
             return example.assessments.executeNcscAssessment(example.context, submitCommand(assessmentId, 1, 'submit-' + assessmentId));
         }
+        // A v1 assessment is created on the accepted profile explicitly: with the v2 flag on and v2 listed,
+        // a normal create now starts on v2 (#399), so an earlier v1 result is seeded the way submitV2 seeds v2.
         async function submitV1(example, assessmentId) {
-            await example.assessments.executeNcscAssessment(example.context, createCommand(assessmentId, 'create-' + assessmentId));
+            const command = createCommand(assessmentId, 'create-' + assessmentId);
+            const created = ncscStore.makeVersion(ncscStore.stableIntent(example.context, command), command.idempotencyKey, null,
+                example.state.tenantAggregate, clock.now(), ACCEPTED_NCSC_CONTEXT);
+            await database.withTenantTransaction(example.scope.tenantId, async tx => {
+                await ncscStore.appendVersion(tx, created); await ncscStore.moveHead(tx, created);
+            });
             await example.assessments.executeNcscAssessment(example.context, saveCommand(assessmentId, 0, 'save-' + assessmentId, allResponses('no')));
             return example.assessments.executeNcscAssessment(example.context, submitCommand(assessmentId, 1, 'submit-' + assessmentId));
         }

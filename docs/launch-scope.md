@@ -91,6 +91,17 @@ comments are post-launch (issue #11).
    No Fries. No open public PR covers it; private-repo PRs were not visible
    when this was written.
 
+## Scoring v2 flag is one-way (owner decision, 26 Nov 2026)
+
+`NOFRIES_NCSC_PROFILE_V2` is documented as one-way. While it is on, a new
+assessment starts on the 16-question v2 profile when the organisation's product
+lists v2; every existing assessment keeps the profile it stored. Turning the
+flag off after any v2 assessment exists makes those assessments unreadable and
+unwritable by design (there is no read-only fallback), so it is not a rollback
+path. A v1 result is never rescored. Before turning it on: the organisation's
+grant and flags list v2, its submission policy names the v2 profile, and Grok
+has retested a v1 result and a new v2 assessment on the released build.
+
 ## Known limits that do not block launch
 
 - Evidence upload: assessment evidence starts as placeholders; there is no

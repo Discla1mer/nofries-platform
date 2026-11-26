@@ -1143,10 +1143,19 @@ describe('quota and entitlement by stored profile', () => {
         const committed = h.memory.snapshot();
         expect(await submit(h, 'assessment-v2')).toEqual(submitted);
         expect(h.memory.snapshot()).toEqual(committed); expect(h.policy).toHaveBeenCalledTimes(1);
-        // An accepted assessment in the same organisation still uses the accepted policy.
-        await h.create(); await h.save(); await h.submit();
-        expect(h.adapters.policySelections[1].profileRef).toEqual(ACCEPTED);
-        expect(h.memory.rows(USAGE)[0].payload.counters.assessment_runs).toBe(2);
+        // With the flag on and v2 listed, a new assessment in the same organisation starts on v2 (#399, one-way).
+        const created = await h.create();
+        expect(created.assessment.profileRef).toEqual(V2);
+        expect(created.assessment.progress.total).toBe(16);
+    });
+
+    test('flag on: an existing accepted assessment keeps the accepted profile and policy', async () => {
+        const h = await setup({ now: LATER, profileRefs: [ACCEPTED, V2] }, seeded()); policyFor(h);
+        await h.create();
+        process.env.NOFRIES_NCSC_PROFILE_V2 = 'true';
+        await h.save(); await h.submit();
+        expect(h.adapters.policySelections.map(row => row.profileRef)).toEqual([ACCEPTED]);
+        expect((await h.list()).assessments.map(row => row.profileRef)).toEqual([ACCEPTED]);
     });
 
     test('flag on: a v2 submission is refused without writes when the policy names another profile', async () => {
@@ -1166,14 +1175,13 @@ describe('quota and entitlement by stored profile', () => {
         await expectCode(save(accepted, 'assessment-v2', v2Responses()), 'ncsc_access_denied');
         expect(accepted.memory.snapshot()).toEqual(before);
         await accepted.create(); await accepted.save(); await accepted.submit();
-        // V2-only product: the module opens, a new (accepted) assessment is refused, v2 work proceeds.
+        // V2-only product: the module opens and a new assessment starts on v2; v2 work proceeds.
         const v2 = await setup({ now: LATER, profileRefs: [V2] }, seeded()); policyFor(v2); seedV2(v2);
-        await expectCode(v2.create(), 'ncsc_access_denied');
-        expect(counts(v2)).toEqual([1, 1, 0]);
+        expect((await v2.create()).assessment.profileRef).toEqual(V2);
         await save(v2, 'assessment-v2', v2Responses());
         await submit(v2, 'assessment-v2');
         expect(v2.adapters.policySelections.map(row => row.profileRef)).toEqual([V2]);
-        expect((await v2.list()).assessments.map(row => row.profileRef)).toEqual([V2]);
+        expect((await v2.list()).assessments.map(row => row.profileRef)).toEqual([V2, V2]);
     });
 
     test('flag turned off again: a stored v2 assessment is not written or charged', async () => {

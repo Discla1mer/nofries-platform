@@ -11,7 +11,7 @@ const { resolveNcscAccess: ncscAccess, normalRole, selectAdvisor } = require('./
 const ncscStore = require('../assessmentLifecycle/postgresNcscAssessmentStore');
 const outbox = require('../lifecycleEmail/outboxWriter');
 const { MODULE_ID: NCSC_MODULE } = require('../assessmentEngine/ncscAssessmentEvaluator');
-const { listsNcscProfile, readableNcscProfileContext } = require('../assessmentEngine/ncscProfileSet');
+const { ACCEPTED_NCSC_CONTEXT, NCSC_V2_CONTEXT, listsNcscProfile, ncscProfileV2Enabled, readableNcscProfileContext } = require('../assessmentEngine/ncscProfileSet');
 const { NcscAssessmentError, normaliseNcscCommand, normaliseNcscPage, normaliseNcscSelector,
     requireNcscContext } = require('../ncscAssessmentService');
 
@@ -228,6 +228,15 @@ function createPostgresDashboardRepository(options) {
             product.validFrom > selection.at) ncscFail();
         return freeze(policy);
     }
+    // Scoring v2 (#399): a new assessment starts on the v2 profile only while
+    // NOFRIES_NCSC_PROFILE_V2 is on and the product lists v2; otherwise on the
+    // accepted profile, exactly as before. The flag is one-way once customers
+    // hold v2 assessments (docs/launch-scope.md). Later versions keep the
+    // profile their first version stored, whatever this returns.
+    function createProfileContext(frameworks) {
+        return ncscProfileV2Enabled() && listsNcscProfile(frameworks, NCSC_V2_CONTEXT.profileRef)
+            ? NCSC_V2_CONTEXT : ACCEPTED_NCSC_CONTEXT;
+    }
     // Quota, policy and entitlement are all chosen by the profile the assessment
     // itself stored; while the v2 flag is off that is always the accepted profile.
     function storedProfileRef(profileRef) {
@@ -392,7 +401,7 @@ function createPostgresDashboardRepository(options) {
             if (command.action === 'create' && head) ncscFail('ncsc_state_conflict', 409);
             if (command.action !== 'create' && !head) ncscFail('ncsc_not_found', 404);
             const version = ncscStore.makeVersion(intent, command.idempotencyKey,
-                head ? history.get(head.revision) : null, snapshot.tenantAggregate, at);
+                head ? history.get(head.revision) : null, snapshot.tenantAggregate, at, createProfileContext(decision.frameworks));
             // Every write needs the product to list the assessment's own profile.
             if (!listsNcscProfile(decision.frameworks, storedProfileRef(version.envelope.state.profileRef))) ncscFail('ncsc_access_denied', 403);
             await ncscStore.assertPersistableCandidate(tx, version);
