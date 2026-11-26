@@ -229,8 +229,20 @@
         const labels = new Map(metadata.responseOptions.map(function (item) { return [item.id, item.label]; }));
         const optionOf = function (id) { const response = assessment.responses.find(function (item) { return item.itemId === id; }); return response ? response.optionId : null; };
         const items = [];
-        ['no', 'partial', 'unknown', 'not_applicable'].forEach(function (optionId) {
-            metadata.questions.filter(function (question) { return answerGroup(optionOf(question.id)) === optionId; }).forEach(function (question) {
+        // Accepted profile: gaps (No and Partial) follow the same order as "Your
+        // top three gaps": priority tier, then No before Partial, then question
+        // order (#441 M1-12, M1-13). Scoring v2 ranks by saved weight, which is
+        // not in the metadata, so v2 keeps grouping by answer (No, then Partial).
+        // Answers to check follow, Unknown then Not applicable.
+        const v2 = isV2(metadata);
+        const gapQuestions = metadata.questions.map(function (question, position) { return { question: question, position: position, group: answerGroup(optionOf(question.id)) }; })
+            .filter(function (entry) { return Object.hasOwn(GAP_RANK, entry.group); })
+            .sort(function (a, b) { return (v2 ? 0 : gapTier(a.question.id) - gapTier(b.question.id)) || GAP_RANK[a.group] - GAP_RANK[b.group] || a.position - b.position; });
+        [['gap', gapQuestions], ['unknown'], ['not_applicable']].forEach(function (pass) {
+            const entries = pass[1] || metadata.questions.filter(function (question) { return answerGroup(optionOf(question.id)) === pass[0]; })
+                .map(function (question) { return { question: question, group: pass[0] }; });
+            entries.forEach(function (entry) {
+                const question = entry.question, optionId = entry.group;
                 const control = metadata.controls.find(function (item) { return item.id === question.controlId; });
                 const action = optionId === 'unknown' ? 'Ask your IT provider to check what is in place.' : optionId === 'not_applicable' ? 'Confirm with your IT provider whether this applies to your business.' : question.smallBusiness && question.smallBusiness.checks.join(' ') || question.guidance && question.guidance.startingActions && question.guidance.startingActions[0] || 'Agree the next improvement with your IT provider.';
                 const ownerStart = ['no', 'partial'].includes(optionId) && /^NF-NCSC-MCSS-(RM|SA|AI|RP)-01-Q1$|^NF-NCSC-CC-SV-01-Q1$/.test(question.id);
@@ -1921,7 +1933,7 @@
                 const item = node('li'); item.append(node('strong', '', entry.title), node('p', 'dashboard-muted', entry.owner), node('p', '', entry.action)); list.append(item);
             });
             const followUpCount = list.children.length;
-            if (followUpCount) section.append(node('p', '', 'Suggested follow-ups: ' + followUpCount + '. Grouped by your answer (No, then Partial, then Unknown, then Not applicable). Not ranked by risk or urgency.'));
+            if (followUpCount) section.append(node('p', '', 'Suggested follow-ups: ' + followUpCount + (isV2(metadata) ? '. Grouped by your answer (No, then Partial, then Unknown, then Not applicable). Your top gaps above show the priority order.' : '. Gaps come first, in the same order as your top gaps, then answers to check.')));
             if (followUpCount > 3) Array.prototype.forEach.call(list.children, function (item, index) { if (index >= 3) item.hidden = true; });
             section.append(list);
             if (followUpCount > 3) {
