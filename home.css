@@ -1489,3 +1489,27 @@ body[data-page="public-error"] .public-shell { min-height: 0; }
     .roadmap-timeline { grid-template-columns: repeat(4, minmax(0, 1fr)); }
     .roadmap-legend { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
+
+/* Site version sits quietly under the footer instead of floating at the page edge (26 Nov). */
+.site-release { width: min(1180px, calc(100% - 40px)); margin: -8px auto 18px; padding: 0; font-size: .78rem; color: var(--muted); box-sizing: border-box; }
+.site-release summary { cursor: pointer; list-style: none; display: inline-flex; align-items: center; min-height: 24px; }
+.site-release summary::-webkit-details-marker { display: none; }
+.site-release[open] summary { margin-bottom: 4px; }
+
+/* Browns Bay offer visuals (26 Nov). */
+.ad-price-tag { display: inline-grid; gap: 4px; background: var(--paper); border: 1px solid var(--line); border-left: 6px solid var(--yellow); border-radius: var(--radius-small); padding: 14px 18px; margin: 6px 0 10px; }
+.ad-price-tag p { margin: 0; }
+.ad-price-tag .ad-price { font-family: var(--font-display); font-size: 1.5rem; color: var(--green-dark); }
+.mdr-flow { list-style: none; margin: 14px 0 18px; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; position: relative; }
+.mdr-flow::before { content: ""; position: absolute; left: 22px; right: calc(33.3% - 22px); top: 21px; border-top: 3px solid var(--green); }
+.mdr-flow li { position: relative; display: grid; gap: 4px; align-content: start; font-size: .95rem; }
+.mdr-flow li > span:last-child { color: var(--ink-soft); font-size: .9rem; }
+.mdr-step { width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; background: var(--green); color: var(--paper); font-weight: 700; font-family: var(--font-display); font-size: 1.1rem; margin-bottom: 6px; }
+.mdr-flow li:last-child .mdr-step { background: var(--red); }
+@media (max-width: 640px) {
+    .mdr-flow { grid-template-columns: 1fr; }
+    .mdr-flow::before { left: 21px; right: auto; top: 22px; bottom: 22px; border-top: 0; border-left: 3px solid var(--green); }
+    .mdr-flow li { grid-template-columns: 44px 1fr; column-gap: 12px; }
+    .mdr-step { grid-row: 1 / span 2; margin: 0; }
+}
+@media (max-width: 760px) { .site-release { width: min(100% - 24px, 1180px); } }

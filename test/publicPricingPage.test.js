@@ -15,8 +15,9 @@ test('the pricing page shows the plans in the agreed order', () => {
 });
 
 test('every non-zero price says + GST', () => {
-    const prices = [...text.matchAll(/NZ\$([\d,]+)(.{0,6})/g)];
-    expect(prices.map(match => match[1])).toEqual(['0', '1,250', '350', '59', '99', '139', '750', '20', '125']);
+    const prices = [...text.matchAll(/NZ\$(\d[\d,]*(?:\.\d+)?)(.{0,6})/g)];
+    // The price path repeats some headline figures, so compare each price's first appearance.
+    expect([...new Set(prices.map(match => match[1]))]).toEqual(['0', '1,250', '350', '59', '99', '139', '750', '20', '125', '30.04']);
     for (const [whole, amount, after] of prices) {
         if (amount !== '0') expect([whole, after.startsWith(' + GST')]).toEqual([whole, true]);
     }

@@ -141,10 +141,10 @@ testCase('the plans and pricing section renders the three tiers with GST-exclusi
     // Add-on note keeps every price GST-qualified.
     assert.match(plansText, /Set-up from NZ\$750 \+ GST\. Extra computers NZ\$20 \+ GST each per month, extra locations NZ\$125 \+ GST each per month\./);
     // Every NZ$ figure on the page is immediately followed by "+ GST".
-    for (const match of pricing.matchAll(/NZ\$[\d,]+/g)) {
+    for (const match of pricing.matchAll(/NZ\$\d[\d,]*(?:\.\d+)?/g)) {
         const after = text(pricing.slice(match.index, match.index + match[0].length + 60));
         if (match[0] === 'NZ$0') continue;
-        assert.match(after, /^NZ\$[\d,]+ \+ GST/, `price without + GST near: ${after.slice(0, 40)}`);
+        assert.match(after, /^NZ\$\d[\d,]*(?:\.\d+)? \+ GST/, `price without + GST near: ${after.slice(0, 40)}`);
     }
 });
 
