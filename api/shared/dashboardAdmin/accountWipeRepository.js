@@ -31,6 +31,8 @@ const RESET_TABLES = Object.freeze([
 const DELETE_TENANT_TABLES = Object.freeze([...RESET_TABLES,
     // Enrollment belongs to the retained agreement, not the cleared working data.
     'dashboard_deferred_agreements', 'dashboard_paid_framework_access', 'email_outbox',
+    // The organisation's own profile (0035) is kept on reset, like its name.
+    'dashboard_organisation_profiles',
     'dashboard_runtime_receipts', 'dashboard_runtime_audit', 'dashboard_identity_bindings',
     'dashboard_onboarding_proofs', 'dashboard_onboarding_decisions', 'dashboard_onboarding_cases',
     'dashboard_admission_decisions', 'dashboard_admission_authorities', 'dashboard_operation_receipts',

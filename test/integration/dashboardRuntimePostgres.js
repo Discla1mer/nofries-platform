@@ -718,7 +718,7 @@ function registerRealPostgresTests() {
                 'dashboard_improvement_revisions', 'dashboard_improvement_heads', 'email_outbox', 'email_preferences',
                 'dashboard_contact_requests', 'dashboard_representative_details', 'dashboard_deferred_agreements',
                 'dashboard_framework_revisions', 'dashboard_iso_report_artifacts', 'dashboard_iso_report_decisions',
-                'dashboard_paid_framework_access'];
+                'dashboard_paid_framework_access', 'dashboard_organisation_profiles'];
             await ownerPool.query('TRUNCATE ' + tables.map(table => 'nofries.' + table).join(', '));
             fixture = harness();
         });
