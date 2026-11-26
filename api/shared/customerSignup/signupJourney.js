@@ -61,7 +61,9 @@ function mountSignupJourney(root, client, { customerTransport, signInRecovery, s
             'Your code comes from “No Fries Customers (via Microsoft)”. It can take a few minutes. Check your junk or spam folder.',
             'If Microsoft rejects the code and returns to email entry, use the same email. If you already finished creating your account, choose Sign in. If you did not finish and cannot get back to the code box, choose Create one with that same email.',
             'No code after 5 minutes? Use the resend option on the Microsoft page. Still nothing? Email hello@nofries.nz.',
-            'Microsoft then asks to share your name and email with No Fries. It says the app is “not published by Microsoft”. That is expected: No Fries made the app, and Microsoft runs the sign-in. Accept to continue.'
+            'New account: Microsoft sends a code to your email first. After the code, it asks you to choose a password and add your details.',
+            'Microsoft then asks to share your name and email with No Fries. It says the app is “not published by Microsoft”. That is expected: No Fries made the app, and Microsoft runs the sign-in. Accept to continue.',
+            'If a Microsoft page shows an error after you chose a password, your account is usually already made. Go to nofries.nz and choose Sign in with the same email and password.'
         ]) list.append(element('li', line));
         section.append(title, list);
         return section;
@@ -116,9 +118,9 @@ function mountSignupJourney(root, client, { customerTransport, signInRecovery, s
                 root.append(reset, element('span', ' · '), help);
                 if (supportReference) root.append(element('p', 'If this keeps happening, email hello@nofries.nz and quote reference ' + supportReference + '.'));
             } else {
-                root.append(element('p', customerTransport ? entryIntent === 'create' ? 'Create an account with your email and password.'
+                root.append(element('p', customerTransport ? entryIntent === 'create' ? 'Create an account with your email. Microsoft sends you a code, then asks you to choose a password.'
                     : entryIntent === 'login' ? 'Sign in with your existing email and password.'
-                    : 'Create an account with your email and password, or sign in to your existing account.' : 'Continue secure sign-in with the email address you verified or that received your invitation.'));
+                    : 'Create an account with your email, or sign in to your existing account.' : 'Continue secure sign-in with the email address you verified or that received your invitation.'));
             }
             // Browser cancellation backstop only. The server independently
             // enforces its five-minute, one-use authentication transaction.

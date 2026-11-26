@@ -338,7 +338,7 @@ test.each(['dynamic', 'hosted'].flatMap(kind => ['login', 'create'].map(intent =
                 const guide = page.root.querySelector('section');
                 expect(guide.querySelector('h2').textContent).toBe('What happens on the Microsoft pages');
                 for (const text of ['nofriescustomers.ciamlogin.com', '“No Fries Customers (via Microsoft)”', 'can take a few minutes',
-                    'junk or spam', 'returns to email entry', 'choose Create one with that same email', 'resend option', 'hello@nofries.nz', '“not published by Microsoft”']) expect(guide.textContent).toContain(text);
+                    'junk or spam', 'returns to email entry', 'choose Create one with that same email', 'resend option', 'hello@nofries.nz', '“not published by Microsoft”', 'sends a code to your email first', 'choose a password', 'your account is usually already made']) expect(guide.textContent).toContain(text);
                 const children = [...page.root.children];
                 expect(children.indexOf(page.root.querySelector('button'))).toBeLessThan(children.indexOf(guide));
                 page.root.querySelectorAll('button').find(node => node.textContent === 'Create account').click();
