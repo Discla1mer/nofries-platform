@@ -31,6 +31,10 @@ module.exports = function registerContactRequestHttpPostgres({ ncscHttpSetup, ht
             const first = body();
             const created = await ask(h, first); httpJson(created, 200);
             expect(created.body).toEqual({ schemaVersion: 1, status: 'requested' });
+            // #455: the success path carries the same API security headers as a refusal (the edge rule adds none).
+            expect(created.headers['content-security-policy']).toContain("default-src 'none'");
+            expect(created.headers['x-content-type-options']).toBe('nosniff');
+            expect(created.headers['x-robots-tag']).toMatch(/noindex/);
             const [row] = await stored(h);
             expect(row).toMatchObject({ tenant_id: h.binding.scope.tenantId, organisation_id: h.binding.scope.organisationId, request_id: first.operationId, subject_key: subject(h.principal),
                 topic: 'results', consent_version: 'contact-request-v1' });
