@@ -953,7 +953,8 @@
                 const card = node('section', primary ? 'picture-metric picture-primary' : 'picture-metric');
                 card.append(node('h3', '', label), node('strong', 'picture-large', value), node('p', '', copyText)); metrics.append(card); return card;
             }
-            const awaitingReview = result.pending + (result.pending === 1 ? ' answer' : ' answers') + ' marked not applicable, to confirm';
+            // Mention answers marked not applicable only when there are some.
+            const awaitingReview = result.pending ? ', including ' + result.pending + ' marked not applicable' : '';
             const rangeHelp = 'The lower figure is what you reported as in place. The higher figure includes unknown answers and answers marked not applicable, to confirm.';
             // A submitted result is read-only, so do not ask the customer to confirm answers here.
             const implementationMetric = questionnaire.enoughAnswersToEstimate(result)
@@ -961,7 +962,7 @@
                 : metric('Reported implementation', 'Not enough answers to estimate yet, confirm your Unknowns first', result.unknown + ' answers still to confirm. Only ' + result.completed + ' of ' + result.total +
                     ' answers are Yes, Partial or No. Most answers are Unknown or Not applicable, so the range is too wide to be useful. Range so far: ' + result.attainment + '. ' +
                     (typeof options.openCyber === 'function' ? 'Start a new assessment once more answers are known. ' : '') + rangeHelp, true);
-            const completionMetric = metric('Answers confirmed', result.completion, result.completed + ' of ' + result.total + ' questions have a yes, partial or no response. ' + result.unknown + ' still to confirm, including ' + awaitingReview + '. All ' + detail.progress.answered + ' responses are saved; submission does not mean all controls are implemented.');
+            const completionMetric = metric('Answers confirmed', result.completion, result.completed + ' of ' + result.total + ' questions have a yes, partial or no response. ' + result.unknown + ' still to confirm' + awaitingReview + '. All ' + detail.progress.answered + ' responses are saved; submission does not mean all controls are implemented.');
             const calculation = node('details', 'picture-calculation');
             const summary = node('summary', '', 'How the implementation range is calculated');
             summary.id = id + '-reading-guide';

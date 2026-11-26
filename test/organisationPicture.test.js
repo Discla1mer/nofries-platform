@@ -77,7 +77,8 @@ test('connected view preserves golden server range, uncertainty and completion w
     assert.match(dom.root.textContent, /12 of 14/);
     assert.match(dom.root.textContent, /7 partial and 2 absent/);
     assert.match(dom.root.textContent, /2 still to confirm/);
-    assert.match(dom.root.textContent, /including 1 answer marked not applicable, to confirm/);
+    assert.doesNotMatch(dom.root.textContent, /including 0 /);
+    assert.match(dom.root.textContent, /2 still to confirm, including 1 marked not applicable\./);
     assert.doesNotMatch(dom.root.textContent, /not a performance score|This filter changes only|Counts are not a combined total/);
     assert.doesNotMatch(dom.root.textContent, /Supporting evidence|Tested or observed coverage|evidence upload/i);
     assert.equal(dom.root.querySelectorAll('meter').length, dom.fixtures.metadata.domains.length);
@@ -709,7 +710,7 @@ test('domain categories explicitly show no matches without presenting empty list
         const empty = category.querySelector('.picture-follow-up-empty');
         assert.equal(empty.hidden, false); assert.match(empty.textContent, /No follow-up items in this function for this category/);
     }
-    assert.match(dom.root.querySelector('.picture-metrics').textContent, /2 still to confirm, including 1 answer marked not applicable, to confirm/);
+    assert.match(dom.root.querySelector('.picture-metrics').textContent, /2 still to confirm, including 1 marked not applicable\./);
     const before = follow.textContent, visibility = follow.querySelectorAll('article').map(article => article.hidden);
     change(filter, 'unrecognised-domain');
     assert.equal(follow.textContent, before); assert.deepEqual(follow.querySelectorAll('article').map(article => article.hidden), visibility);
