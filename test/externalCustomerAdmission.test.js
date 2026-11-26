@@ -33,7 +33,7 @@ function exhaustBudget(h) {
     const key = 'browser-auth/organisation-setup/budget/' + require('node:crypto')
         .createHash('sha256').update('global:all:' + bucket).digest('hex') + '.json';
     h.getContainer('nofries-browser-auth').records.set(key, Buffer.from(JSON.stringify({
-        schemaVersion: 1, count: 20, expiresAt: (bucket + 1) * 86400000 })));
+        schemaVersion: 1, count: 100, expiresAt: (bucket + 1) * 86400000 })));
 }
 
 test('exhausted shared daily budget denies a new managed subject before setup assurance or account writes', async () => {
