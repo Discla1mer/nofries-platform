@@ -1028,6 +1028,16 @@ describe('questionnaire draft progress and unanswered navigation', () => {
         } finally { ui.controller.destroy(); }
     });
 
+    test('a Not applicable answer counts as answered only once its explanation is entered (#441 RANGI-14)', async () => {
+        const h = await backend(), ui = await createInUi(h);
+        try {
+            choose(ui, 0, 'yes'); choose(ui, 1, 'not_applicable');
+            expect(byId(ui, 'ncsc-draft-progress').textContent).toBe('1 of 14 answered · About 13 min left');
+            enter(byId(ui, `ncsc-rationale-${metadata().questions[1].id}`), 'Synthetic pending exclusion.');
+            expect(byId(ui, 'ncsc-draft-progress').textContent).toBe('2 of 14 answered · About 12 min left');
+        } finally { ui.controller.destroy(); }
+    });
+
     test('Yes, Partial and No resolve local answers without claiming those responses are already saved', async () => {
         const h = await backend(), ui = await createInUi(h);
         ['yes', 'partial', 'no', 'unknown', 'not_applicable'].forEach((option, index) =>
