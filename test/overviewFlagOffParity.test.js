@@ -33,9 +33,9 @@ const { renderV1Parity } = require('./fixtures/overviewParity');
 // gaps in the top-gaps order (tier, then No before Partial) with a matching caption.
 // "Two gaps only" has no reordering, so its digest is unchanged, as are all models,
 // requests and actions.
-// RANGI-13 (stacked on #643) updates the four result-bearing DOM digests: each
-// top-gap "What to do next" now shows the first specific check instead of
-// restating the question. Models, requests and actions are unchanged.
+// RANGI-13 (#644) updates the four result-bearing DOM digests: each top-gap
+// "What to do next" now shows the first specific check instead of restating the
+// question. Models, requests and actions are unchanged.
 const EXPECTED_V1 = {
     "mixed single result": {"dom": "759f2c2e13c8ee2104e63103cd7ef8aa25b465b3f7adfee7f09898dee9492632", "models": "1090aaaa9a72e144276c87fbf806f98258434689b118da98fff5587466657317", "requests": "0bc62d8a75163b4c0cbd9eae4bf23d3fb1075fc46f1296b9ca669d132522ccbe", "actions": "382ab69c2c7db231fb94b554071fa910bb4e87756ba47d29547221a5d5dc3118"},
     "three results and a draft, compared": {"dom": "2c7aac8af9707e4837e13833032c0dd303429a2c1830c7943b196c2bfe2ff039", "models": "4b41f9a9893a8523e0efd203626b5b51a21332e766a8385320879abf5237386b", "requests": "d43f4f731927071e22113944f77fab7815125a9a95eeeca12ae1dd079aad1a3b", "actions": "382ab69c2c7db231fb94b554071fa910bb4e87756ba47d29547221a5d5dc3118"},
