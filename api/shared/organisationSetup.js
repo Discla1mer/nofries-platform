@@ -36,7 +36,10 @@ async function reserveSetupBudget(store, kind, identity, period, limit, at, rese
 }
 // One existing durable daily ceiling, shared by legacy verification requests and
 // first external setup admission across every process and runtime instance.
-const reserveSetupGlobalBudget = (store, at, reservationKey) => reserveSetupBudget(store, 'global', 'all', 86400000, 20, at, reservationKey);
+// Raised from 20 on the owner's decision (27 Nov 2026), ahead of advertising:
+// 20 was within reach of a day's testing and would have turned away ad sign-ups.
+const SETUP_GLOBAL_DAILY_LIMIT = 100;
+const reserveSetupGlobalBudget = (store, at, reservationKey) => reserveSetupBudget(store, 'global', 'all', 86400000, SETUP_GLOBAL_DAILY_LIMIT, at, reservationKey);
 function input(value, keys) {
     if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).sort().join(',') !== keys.sort().join(',')) fail(400, 'setup_input_invalid');
     return value;

@@ -28,14 +28,14 @@ function fixture() {
         nextDay() { at += 86400000; } };
 }
 
-test('two instances race for the final shared slot without exceeding twenty permits', async () => {
+test('two instances race for the final shared slot without exceeding one hundred permits', async () => {
     const h = fixture();
-    for (let n = 1; n <= 19; n++) await h.admission.reserve(subject(n));
-    const results = await Promise.allSettled([h.admission.reserve(subject(20)), h.restart().reserve(subject(21))]);
+    for (let n = 1; n <= 99; n++) await h.admission.reserve(subject(n));
+    const results = await Promise.allSettled([h.admission.reserve(subject(100)), h.restart().reserve(subject(101))]);
     expect(results.filter(result => result.status === 'fulfilled')).toHaveLength(1);
-    expect(h.budgets()).toEqual([20]); expect(h.permits()).toHaveLength(20);
-    await expect(h.restart().reserve(subject(22))).rejects.toThrow();
-    expect(h.permits()).toHaveLength(20);
+    expect(h.budgets()).toEqual([100]); expect(h.permits()).toHaveLength(100);
+    await expect(h.restart().reserve(subject(102))).rejects.toThrow();
+    expect(h.permits()).toHaveLength(100);
 });
 
 test('twenty concurrent callbacks for one subject reserve aggregate capacity only once', async () => {
@@ -47,28 +47,28 @@ test('twenty concurrent callbacks for one subject reserve aggregate capacity onl
 
 test('retained permits survive restart, exhaustion and day rollover without consuming new capacity', async () => {
     const h = fixture();
-    for (let n = 1; n <= 20; n++) await h.admission.reserve(subject(n));
+    for (let n = 1; n <= 100; n++) await h.admission.reserve(subject(n));
     const before = clone([...h.records]);
     await h.restart().reserve(subject(1)); await h.restart().recheck(subject(1));
     expect([...h.records]).toEqual(before);
     h.nextDay(); await h.restart().reserve(subject(1));
     expect([...h.records]).toEqual(before);
-    await h.restart().reserve(subject(21));
-    expect(h.budgets()).toEqual([20, 1]); expect(h.permits()).toHaveLength(21);
+    await h.restart().reserve(subject(101));
+    expect(h.budgets()).toEqual([100, 1]); expect(h.permits()).toHaveLength(101);
 });
 
-test('legacy email verification and managed admission spend the same twenty-per-day budget', async () => {
+test('legacy email verification and managed admission spend the same hundred-per-day budget', async () => {
     const h = fixture(), delivered = jest.fn();
     const legacy = createOrganisationSetup({ store: h.store, sendEmail: delivered,
         origin: 'https://nofries.nz', now: h.options.now });
     const request = n => legacy.handle({ method: 'POST', path: '/api/organisation-setup/request',
         headers: { origin: 'https://nofries.nz', 'content-type': 'application/json' },
         clientKey: 'synthetic-network-' + n, body: { email: 'person' + n + '@synthetic.example' } });
-    for (let n = 1; n <= 19; n++) expect((await request(n)).status).toBe(202);
+    for (let n = 1; n <= 99; n++) expect((await request(n)).status).toBe(202);
     await h.admission.reserve(subject(1));
-    expect((await request(20)).status).toBe(429);
+    expect((await request(100)).status).toBe(429);
     await expect(h.restart().reserve(subject(2))).rejects.toThrow();
-    expect(delivered).toHaveBeenCalledTimes(19); expect(h.permits()).toHaveLength(1);
+    expect(delivered).toHaveBeenCalledTimes(99); expect(h.permits()).toHaveLength(1);
 });
 
 test('legacy increments preserve a pending subject reservation across a lost permit write', async () => {
