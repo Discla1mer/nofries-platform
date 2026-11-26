@@ -13,9 +13,18 @@
     const extraLocation = Number(form.dataset.extraLocation) || 0;
     const bars = form.querySelector('.it-estimate-bars');
     const money = value => 'NZ$' + value.toLocaleString('en-NZ') + ' + GST';
+    // The estimate never uses a quantity the visitor cannot see: an out-of-range entry is written back as the
+    // quantity actually used, and the note says when the cap applied.
+    const capNote = form.querySelector('.it-estimate-cap');
     const read = (name, min, max) => {
-        const value = Math.round(Number(form.elements[name].value));
-        return Number.isFinite(value) ? Math.min(max, Math.max(min, value)) : min;
+        const input = form.elements[name];
+        const raw = Number(input.value);
+        const value = Number.isFinite(raw) && input.value !== '' ? Math.min(max, Math.max(min, Math.round(raw))) : min;
+        if (input.value !== '' && String(value) !== input.value) {
+            input.value = String(value);
+            if (raw > max && capNote) capNote.hidden = false;
+        }
+        return value;
     };
     const rows = tiers.map(tier => {
         const li = document.createElement('li');
@@ -27,7 +36,9 @@
         li.append(label, track, value); bars.append(li);
         return { tier, fill, value };
     });
-    function update() {
+    function update(event) {
+        // A new keystroke clears the note; the change event that follows a capped entry keeps it.
+        if (capNote && (!event || event.type === 'input')) capNote.hidden = true;
         const users = read('users', 1, 200), computers = read('computers', 0, 200), locations = read('locations', 0, 20);
         const totals = rows.map(row => row.tier.rate * users + computers * extraComputer + locations * extraLocation);
         const top = Math.max(...totals);
@@ -37,6 +48,7 @@
         });
     }
     form.addEventListener('input', update);
+    form.addEventListener('change', update);
     form.addEventListener('submit', event => event.preventDefault());
     update();
     form.hidden = false;

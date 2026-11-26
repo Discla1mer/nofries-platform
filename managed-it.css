@@ -645,3 +645,4 @@ body[data-page="dashboard-pricing"] main .price-path a:not(.button), body[data-p
     .it-stairs li[data-tier="managed"] { margin-left: 16px; }
     .it-stairs li[data-tier="secure"] { margin-left: 32px; }
 }
+.it-estimate-cap { margin: 0 0 10px; font-weight: 600; color: var(--red); }
