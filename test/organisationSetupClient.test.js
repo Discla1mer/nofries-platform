@@ -681,13 +681,13 @@ test('returning customers can sign in from the static entry after the signup ema
     // This completed earlier login establishes the durable mailbox proof. The
     // returning browser below has neither an invitation nor a setup cookie.
     expect((await production.login(user)).response.status).toBe(303);
-    for (let i = 0; i < 20; i++) {
+    for (let i = 0; i < 100; i++) {
         const sent = await production.sameOrigin(request(production.app).post('/api/organisation-setup/request'))
             .set('X-Forwarded-For', '192.0.2.' + (i + 1)).send({ email: 'new' + i + '@example.test' });
         expect(sent.status).toBe(202);
     }
     const limited = await production.sameOrigin(request(production.app).post('/api/organisation-setup/request'))
-        .set('X-Forwarded-For', '192.0.2.100').send({ email: 'another@example.test' });
+        .set('X-Forwarded-For', '192.0.2.200').send({ email: 'another@example.test' });
     expect(limited.status).toBe(429); expect(limited.body.code).toBe('setup_rate_limited');
     const budget = () => [...production.getContainer('nofries-browser-auth').records]
         .filter(([key]) => key.includes('/budget/')).map(([key, bytes]) => [key, bytes.toString()]);

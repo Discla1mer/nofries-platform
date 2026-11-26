@@ -145,8 +145,8 @@ test('a full daily limit and lost write races are told apart by the budget itsel
     const records = new Map();
     const store = { load: async k => records.has(k) ? { record: records.get(k), version: 1 } : null,
         create: async (k, v) => { records.set(k, v); return true; }, replace: async (k, _version, v) => { records.set(k, v); return true; } };
-    for (let i = 0; i < 20; i++) await reserveSetupGlobalBudget(store, at, key(i));
-    const full = await reserveSetupGlobalBudget(store, at, key(20)).catch(error => error);
+    for (let i = 0; i < 100; i++) await reserveSetupGlobalBudget(store, at, key(i));
+    const full = await reserveSetupGlobalBudget(store, at, key(100)).catch(error => error);
     expect(full).toMatchObject({ statusCode: 429, code: 'setup_rate_limited' }); expect(full.contended).toBeUndefined();
     const racing = { load: async () => null, create: async () => false, replace: async () => false };
     expect(await reserveSetupGlobalBudget(racing, at, key(1)).catch(error => error))
