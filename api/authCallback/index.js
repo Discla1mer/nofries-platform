@@ -71,7 +71,8 @@ function createAuthCallbackFunction(options = {}) {
                 // Presentation only: never relay a provider error, callback
                 // value or return URL. Missing cookies remain a generic retry.
                 const recovery = error instanceof BrowserAuthError && error.code === 'browser_auth_transaction_expired'
-                    ? 'expired' : error instanceof BrowserAuthError && ACCOUNT_RECOVERY_CODES.has(error.code) ? 'account' : 'retry';
+                    ? 'expired' : error instanceof BrowserAuthError && ACCOUNT_RECOVERY_CODES.has(error.code) ? 'account'
+                        : error instanceof BrowserAuthError && error.code === 'browser_auth_signup_capacity_reached' ? 'busy' : 'retry';
                 context.res = { status: 303, headers: apiSecurityHeaders({ ...responseHeaders,
                     Location: (options.customerTransport === 'external'
                         ? `/login?signin=${recovery}&provider=external` : `/login?signin=${recovery}&provider=legacy`) + `&ref=${reference}` }), body: '' };

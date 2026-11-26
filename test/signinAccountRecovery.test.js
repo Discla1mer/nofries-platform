@@ -85,3 +85,44 @@ test.each([
 ])('the view refuses malformed or orphaned hints: %j', options => {
     expect(() => mountSignupJourney({}, {}, { customerTransport: 'external', ...options })).toThrow(/signup_view_(reference|recovery)_invalid/);
 });
+
+test('the daily new-account limit gets its own outcome, log code and screen, not a sign-in restart', async () => {
+    const { response, warn } = await callbackFailure('browser_auth_signup_capacity_reached');
+    const location = new URL(response.headers.Location, 'https://nofries.nz');
+    expect(location.searchParams.get('signin')).toBe('busy');
+    const reference = location.searchParams.get('ref');
+    expect(warn).toHaveBeenCalledWith(`Browser sign-in callback failed: browser_auth_signup_capacity_reached ref=${reference}`);
+    const f = mount({ customerTransport: 'external', signInRecovery: 'busy', supportReference: reference });
+    try {
+        await f.view.ready;
+        expect(f.root.textContent).toContain('New accounts are full for today');
+        expect(f.root.textContent).toContain('Come back tomorrow and sign in with the same email and password.');
+        expect(f.root.textContent).toContain('quote reference ' + reference);
+        expect(f.root.textContent).not.toContain('Restart secure sign-in');
+        expect(f.root.querySelector('button').textContent).toBe('Try signing in again');
+    } finally { f.view.dispose(); }
+});
+
+test.each([[Object.assign(new Error('x'), { code: 'setup_rate_limited' }), 'browser_auth_signup_capacity_reached'],
+    [Object.assign(new Error('x'), { code: 'setup_unavailable' }), 'setup_unavailable'],
+    [new Error('external_signup_admission_unavailable'), undefined]])(
+    'only an exhausted new-account limit is named at first admission (%#)', async (failure, code) => {
+        const { createExternalCustomerIdentityPolicy } = require('../api/shared/customerSignup/externalCustomerIdentityPolicy');
+        const tenant = '11111111-1111-4111-8111-111111111111', app = '22222222-2222-4222-8222-222222222222',
+            oid = '33333333-3333-4333-8333-333333333333', now = Date.parse('2026-11-27T00:00:00.000Z');
+        const profile = { kind: 'external-id', tenantId: tenant, clientId: app, authority: 'https://synthetic-customer.ciamlogin.com/',
+            issuer: `https://${tenant}.ciamlogin.com/${tenant}/v2.0`,
+            authorizationEndpoint: `https://synthetic-customer.ciamlogin.com/${tenant}/oauth2/v2.0/authorize` };
+        const identity = { tenantId: tenant, principalId: oid, subjectKey: `${tenant}:${oid}` };
+        const policy = createExternalCustomerIdentityPolicy({ profile, records: { readSubject: async () => null }, allowNewSignup: true,
+            signupAdmission: { reserve: async () => { throw failure; }, recheck: async () => {} }, now: () => now,
+            verifyAuthentication: async () => ({ subjectKey: identity.subjectKey, email: 'synthetic@example.test',
+                verifiedAt: now, expiresAt: now + 3600000, policySha256: 'a'.repeat(64) }),
+            recheckAuthentication: async () => true });
+        const attempt = policy.verify({ identity, context: { verifiedEmail: null },
+            claims: { iss: profile.issuer, tid: tenant, oid, aud: app, exp: Math.floor(now / 1000) + 3600 } });
+        if (code === 'browser_auth_signup_capacity_reached') {
+            await expect(attempt).rejects.toBeInstanceOf(BrowserAuthError);
+            await expect(attempt).rejects.toMatchObject({ statusCode: 429, code });
+        } else await expect(attempt).rejects.toBe(failure);
+    });
