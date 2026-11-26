@@ -123,7 +123,7 @@ function mountSignupJourney(root, client, { customerTransport, signInRecovery, s
                     : 'Create an account with your email, or sign in to your existing account.' : 'Continue secure sign-in with the email address you verified or that received your invitation.'));
             }
             // Browser cancellation backstop only. The server independently
-            // enforces its five-minute, one-use authentication transaction.
+            // enforces its own one-use authentication transaction deadline.
             const entry = button(chooseAccount ? 'Sign in with another account' : signInRecovery === 'account' ? 'Try signing in again'
                 : signInRecovery ? 'Restart secure sign-in'
                 : entryIntent === 'create' ? 'Create account' : entryIntent === 'login' ? 'Log in' : 'Sign up or sign in',
