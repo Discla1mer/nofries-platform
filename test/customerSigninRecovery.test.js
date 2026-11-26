@@ -53,7 +53,8 @@ function authentication(external) {
             const url = new URL(external ? provider.authorizationEndpoint : `https://login.microsoftonline.com/${tenant}/oauth2/v2.0/authorize`);
             for (const [key, value] of Object.entries({ client_id: app, redirect_uri: input.redirectUri,
                 response_mode: input.responseMode, state: input.state, nonce: input.nonce,
-                code_challenge: input.codeChallenge, code_challenge_method: input.codeChallengeMethod })) url.searchParams.set(key, value);
+                code_challenge: input.codeChallenge, code_challenge_method: input.codeChallengeMethod,
+                ...(input.prompt ? { prompt: input.prompt } : {}) })) url.searchParams.set(key, value);
             return url.href;
         }, acquireTokenByCode: exchange, getTokenCache: () => ({ removeAccount: async () => {} }) } });
     const handler = createAuthCallbackFunction({ env, service, customerEntry: true,
@@ -94,6 +95,35 @@ test.each([false, true])('a real five-minute boundary consumes %s customer login
     expect(completed.identity.subjectKey).toBe(`${uid(external ? 101 : 1)}:${uid(3)}`);
     expect(await f.service.readSession(cookie(completed.cookie))).toEqual(completed.identity);
     expect(f.exchange).toHaveBeenCalledTimes(1); expect(f.store.sessions.size).toBe(1);
+});
+
+test('account creation keeps its sign-in attempt for twenty minutes, ordinary sign-in for five', async () => {
+    const f = authentication(true), created = await f.service.beginLogin({ registration: true });
+    expect(new URL(created.location).searchParams.get('prompt')).toBe('create');
+    expect(created.cookie).toContain('Max-Age=1200');
+    const record = f.store.transactions.get(cookieId(created.cookie));
+    expect(record.expiresAt - record.issuedAt).toBe(1200000);
+    // Six minutes covers a slow emailed code. It used to end as a failed sign-in.
+    f.setNow(NOW + 360000);
+    const done = await f.invoke(created);
+    expect(done.status).toBe(303); expect(done.headers.Location).toBe('/signup?provider=external');
+    expect(f.exchange).toHaveBeenCalledTimes(1); expect(f.store.sessions.size).toBe(1);
+    const late = await f.service.beginLogin({ registration: true });
+    f.setNow(NOW + 360000 + 1200000);
+    expect((await f.invoke(late)).headers.Location).toMatch(withRef('/login?signin=expired&provider=external'));
+    expect(f.exchange).toHaveBeenCalledTimes(1); expect(f.store.sessions.size).toBe(1);
+    expect((await f.service.beginLogin()).cookie).toContain('Max-Age=300');
+});
+
+test.each([false, true])('a stored %s sign-in attempt cannot claim the longer account-creation window', async external => {
+    const f = authentication(external), started = await f.service.beginLogin();
+    const record = f.store.transactions.get(cookieId(started.cookie));
+    // Legacy sign-in never has the window; a retained-results attempt is refused by purpose.
+    f.store.transactions.set(cookieId(started.cookie), { ...record, expiresAt: record.issuedAt + 1200000,
+        ...(external ? { customerPurpose: 'retained_read' } : {}) });
+    const response = await f.invoke(started);
+    expect(response.headers.Location).toMatch(withRef(`/login?signin=${external ? 'retry' : 'expired'}&provider=${external ? 'external' : 'legacy'}`));
+    expect(f.exchange).not.toHaveBeenCalled(); expect(f.store.sessions.size).toBe(0);
 });
 
 test.each([false, true])('a missing %s customer transaction cookie stays generic and never exchanges a code', async external => {

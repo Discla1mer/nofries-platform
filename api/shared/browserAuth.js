@@ -23,6 +23,10 @@ const COOKIE_NAME = SESSION_COOKIE_NAME;
 const TRANSACTION_KIND = 'oidc_transaction';
 const SESSION_KIND = 'browser_session';
 const TRANSACTION_TTL_MS = 5 * 60 * 1000;
+// Creating an account includes waiting for an emailed code, then a password
+// and details on the provider's pages. Five minutes ended real sign-ups after
+// the account already existed, so only that attempt gets a longer window.
+const REGISTRATION_TRANSACTION_TTL_MS = 20 * 60 * 1000;
 const SESSION_ABSOLUTE_TTL_MS = 4 * 60 * 60 * 1000;
 const MAX_COOKIE_BYTES = 4096;
 const MAX_FORM_BYTES = 16 * 1024;
@@ -144,11 +148,12 @@ function createBrowserAuthService(options = {}) {
         assertTrustedAuthorizationUrl(location, config, { state, nonce, challenge: pkce.challenge, selectAccount: freshLogin, registration });
 
         const issuedAt = Number(now());
+        const lifetime = registration ? REGISTRATION_TRANSACTION_TTL_MS : TRANSACTION_TTL_MS;
         await storeCall(() => store.createTransaction(correlationId, {
             v: 1,
             kind: TRANSACTION_KIND,
             issuedAt,
-            expiresAt: issuedAt + TRANSACTION_TTL_MS,
+            expiresAt: issuedAt + lifetime,
             state,
             nonce,
             codeVerifier: pkce.verifier,
@@ -165,7 +170,7 @@ function createBrowserAuthService(options = {}) {
         });
         return {
             location,
-            cookie: makeCookie(transactionCookie, correlationId, TRANSACTION_TTL_MS / 1000, 'None')
+            cookie: makeCookie(transactionCookie, correlationId, lifetime / 1000, 'None')
         };
     }
 
@@ -221,7 +226,7 @@ function createBrowserAuthService(options = {}) {
             }
 
             // Provider exchange and token-cache cleanup may outlast the original
-            // five-minute attempt. Consuming it never extends that deadline.
+            // attempt. Consuming it never extends that deadline.
             validateTransaction(transaction, now, customerPurpose);
             const sessionId = randomOpaqueId(randomBytes);
             const issuedAt = Number(now());
@@ -574,13 +579,21 @@ function isGuid(value) {
     return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(String(value || ''));
 }
 
+// The longer window exists only for an ordinary external customer attempt,
+// which is the only kind beginLogin can start as account creation.
+function transactionLifetimeAllowed(value, customerPurpose) {
+    const lifetime = value.expiresAt - value.issuedAt;
+    return lifetime === TRANSACTION_TTL_MS || lifetime === REGISTRATION_TRANSACTION_TTL_MS &&
+        value.customerTransport === 'external' && customerPurpose === undefined && value.customerPurpose === undefined;
+}
+
 function validateTransaction(value, now, customerPurpose) {
     const current = Number(now());
     if (
         !value || typeof value !== 'object' || Array.isArray(value) ||
         value.v !== 1 || value.kind !== TRANSACTION_KIND ||
         !Number.isFinite(value.issuedAt) || !Number.isFinite(value.expiresAt) ||
-        value.expiresAt <= value.issuedAt || value.expiresAt - value.issuedAt !== TRANSACTION_TTL_MS ||
+        value.expiresAt <= value.issuedAt || !transactionLifetimeAllowed(value, customerPurpose) ||
         value.issuedAt > current + (CLOCK_SKEW_SECONDS * 1000) || value.expiresAt <= current
     ) {
         throw new BrowserAuthError(401, 'browser_auth_transaction_expired');

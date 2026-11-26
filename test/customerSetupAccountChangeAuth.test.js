@@ -464,7 +464,7 @@ test('external registration requests a fresh create prompt without reusing a pre
     expect(new URL(registration.location).searchParams.has('login_hint')).toBe(false);
     const before = h.store.transactions.get(id(ordinary.cookie)), after = h.store.transactions.get(id(registration.cookie));
     for (const key of ['state', 'nonce', 'codeVerifier']) expect(after[key]).not.toBe(before[key]);
-    expect(after).toMatchObject({ ...binding, expiresAt: NOW + 300000, returnTo: '/signup' });
+    expect(after).toMatchObject({ ...binding, expiresAt: NOW + 1200000, returnTo: '/signup' });
     expect(after).not.toHaveProperty('registration');
     expect((await h.callback(registration)).identity.subjectKey).toBe(`${TENANT}:${SUBJECT}`);
     await expect(h.callback(registration)).rejects.toMatchObject({ code: 'browser_auth_transaction_invalid' });
