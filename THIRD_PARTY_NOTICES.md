@@ -10,6 +10,7 @@ The project rights notice does not replace these licences. Keep original copyrig
 | Wycheproof public verification vectors | Original licence retained in `test/fixtures/customerAssertion/LICENSE-wycheproof`; provenance in that directory's README. |
 | NCSC framework and Minimum Cyber Security Standards adaptations | CC BY 4.0, Crown/GCSB attribution, source links and changes preserved in the profiles and documentation. Logos, design and third-party exceptions are not relicensed by this project. |
 | Optional NZISM workshop references | Crown/GCSB CC BY 4.0 attribution and adaptation statements retained in questionnaire assets and `docs/questionnaire-workshop-downloads.md`. |
+| ASD Essential Eight Maturity Level One adaptation | © Commonwealth of Australia 2023, Australian Signals Directorate, CC BY 4.0. [Source, licence and changes](docs/essential-eight-ml1.md). |
 | NIST CSF 2.0 text and adaptations | NIST Technical Series reuse terms, source attribution, adaptation and no-endorsement statements retained in framework profiles and `docs/nist-csf-2-crosswalk.md`. |
 | Inter in workshop materials | SIL Open Font License provenance is recorded in the workshop documentation; the PowerPoint references the font, and the PDF contains document subsets. |
 | Fraunces web font (`assets/fonts/fraunces-latin-opsz-*.woff2`) | SIL Open Font License 1.1, copyright The Fraunces Project Authors; full licence retained in `assets/fonts/Fraunces-OFL.txt`. Latin subset files from the @fontsource-variable/fraunces 5.3.0 package, unmodified. |
