@@ -24,7 +24,8 @@ test('public identity and metadata lead with the standalone Dashboard', () => {
     assert.doesNotMatch(html, /Free to start|trial/i);
     assert.equal((html.match(/Understand your IT and cyber security and see where the gaps are\./g) || []).length, 2);
     assert.doesNotMatch(html, /in real time|continuous monitoring|automatically updated/i);
-    assert.match(html, /An illustrative view of assessment topics, not a live result\./);
+    // The hero shows the demo's fictional business and says so.
+    assert.match(html, /The demo dashboard for a fictional business, not a live result\./);
     assert.match(html, /Your results reflect the answers you provide\./);
     assert.doesNotMatch(html, /Built from the assessment answers you submit; update them as your IT changes\./);
     assert.doesNotMatch(html, /Automatic updates and connected data feeds are planned\. Managed IT and advisory services are optional\./);
@@ -96,7 +97,8 @@ test('the homepage keeps only one compact MSP section below its Dashboard entry'
 
 test('pricing stays on the pricing page, not the homepage', () => {
     const price = 'NZ$1,250 + GST';
-    const offer = '<a href="/pricing#pricing-pilot">pricing and what’s included in 90-day managed security</a>';
+    // The homepage points to the 90-day service from its third step; the price itself stays on Pricing.
+    const offer = '<a href="/pricing#pricing-pilot">No Fries can fix these with you</a>';
     assert.ok(html.includes(offer));
     const pricingPage = fs.readFileSync(path.join(root, 'pricing.html'), 'utf8');
     assert.ok(pricingPage.includes(price + ' for 90 days'));
