@@ -11,6 +11,7 @@ const {
 } = require('../shared/browserAuth');
 const { logSafeFailure: logStaffFailure } = require('../shared/browserAuthDiagnostics');
 const { apiSecurityHeaders } = require('../shared/securityHeaders');
+const { RESUME_LOCATION, clearRegistrationResumeCookie, hasRegistrationResumeMarker } = require('../shared/customerSignup/registrationResume');
 
 function createAuthCallbackFunction(options = {}) {
     if (options.customerTransport !== undefined && (options.customerTransport !== 'external' || options.customerEntry !== true)) {
@@ -59,7 +60,9 @@ function createAuthCallbackFunction(options = {}) {
             // successful external authentication; never accept a return URL.
             const location = options.customerTransport === 'external' && result.location === '/signup'
                 ? '/signup?provider=external' : result.location;
-            context.res = redirect(location, result.cookies || result.cookie, rateLimitHeaders(rateLimit));
+            const cookies = result.cookies || result.cookie;
+            context.res = redirect(location, options.customerTransport === 'external'
+                ? [].concat(cookies, clearRegistrationResumeCookie()) : cookies, rateLimitHeaders(rateLimit));
         } catch (error) {
             // Customer support references retain their existing behavior.
             const reference = options.customerEntry ? supportReference() : null;
@@ -67,6 +70,16 @@ function createAuthCallbackFunction(options = {}) {
             else logStaffFailure(context, error);
             if (options.customerEntry && getHeader(headers, 'accept').includes('text/html')) {
                 const responseHeaders = rateLimitHeaders(rateLimit);
+                // Account creation outlived its sign-in attempt, so no code can
+                // be redeemed. The account usually exists by now: start ordinary
+                // sign-in once. Clearing the marker here means a second miss
+                // falls through to the recovery page, so this cannot loop.
+                if (options.customerTransport === 'external' && error instanceof BrowserAuthError &&
+                    error.code === 'browser_auth_transaction_missing' && hasRegistrationResumeMarker(getHeader(headers, 'cookie'))) {
+                    context.res = { status: 303, headers: apiSecurityHeaders({ ...responseHeaders,
+                        Location: RESUME_LOCATION, 'Set-Cookie': clearRegistrationResumeCookie() }), body: '' };
+                    return;
+                }
                 if (shouldClearTransactionCookie(error)) responseHeaders['Set-Cookie'] = clearCallbackTransaction();
                 // Presentation only: never relay a provider error, callback
                 // value or return URL. Missing cookies remain a generic retry.

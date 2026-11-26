@@ -76,6 +76,17 @@ test('a generic retry shows the reference as a support fallback', async () => {
     } finally { f.view.dispose(); }
 });
 
+test.each([['account', 'Email hello@nofries.nz', 'NF-7K3Q9A'], ['retry', 'Get sign-in help', 'NF-ABC234'], ['expired', 'Get sign-in help', undefined]])(
+    'the %s recovery screen has a tappable help email that quotes the reference', async (signInRecovery, label, supportReference) => {
+        const f = mount({ customerTransport: 'external', signInRecovery, ...(supportReference ? { supportReference } : {}) });
+        try {
+            await f.view.ready;
+            const link = [...f.root.querySelectorAll('a')].find(a => a.textContent === label);
+            expect(link.href).toBe('mailto:hello@nofries.nz' + (supportReference
+                ? '?subject=Sign-in%20help%2C%20reference%20' + supportReference : ''));
+        } finally { f.view.dispose(); }
+    });
+
 test.each([
     [{ signInRecovery: 'account', supportReference: 'nf-7k3q9a' }],
     [{ signInRecovery: 'account', supportReference: 'NF-7K3Q9A<script>' }],

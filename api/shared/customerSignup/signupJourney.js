@@ -68,6 +68,14 @@ function mountSignupJourney(root, client, { customerTransport, signInRecovery, s
         section.append(title, list);
         return section;
     }
+    // One tap opens an email that already quotes the reference shown on screen.
+    // The reference is display-only and matches a fixed pattern before use.
+    function helpLink(label) {
+        const link = element('a', label);
+        link.href = 'mailto:hello@nofries.nz' + (supportReference
+            ? '?subject=' + encodeURIComponent('Sign-in help, reference ' + supportReference) : '');
+        return link;
+    }
     function button(label, action, timeoutMs = 30000, restoreDraft = false) {
         const node = element('button', label);
         const revision = viewRevision;
@@ -107,11 +115,15 @@ function mountSignupJourney(root, client, { customerTransport, signInRecovery, s
                 root.append(element('p', 'Your sign-in worked, but No Fries could not open an active account for it. Your account may be paused, or setup may not be finished.'),
                     element('p', 'Email hello@nofries.nz' + (supportReference ? ' and quote reference ' + supportReference : '') +
                         ' so we can restore your access. Your saved work is kept.'));
+                const email = helpLink('Email hello@nofries.nz'); email.className = 'text-link signup-secondary-action';
+                root.append(email);
             } else if (signInRecovery === 'busy') {
                 // Display-only, like the other hints. The server decides admission.
                 root.append(element('p', 'Your sign-in worked, but No Fries has reached its limit for new accounts today. Nothing is wrong with your email or password.'),
                     element('p', 'Come back tomorrow and sign in with the same email and password. You do not need to create another account.'),
                     element('p', 'Need it sooner? Email hello@nofries.nz' + (supportReference ? ' and quote reference ' + supportReference : '') + '.'));
+                const sooner = helpLink('Email hello@nofries.nz'); sooner.className = 'text-link signup-secondary-action';
+                root.append(sooner);
             } else if (signInRecovery) {
                 root.append(element('p', signInRecovery === 'expired'
                     ? 'This sign-in attempt has expired or is no longer valid. Start a fresh sign-in to continue.'
@@ -120,7 +132,7 @@ function mountSignupJourney(root, client, { customerTransport, signInRecovery, s
                     ? 'If you finished creating your account, sign in with the same email and password. You do not need to create another account.'
                     : 'Use the same email linked to your account or invitation. Your saved setup and work are kept.'));
                 const reset = element('a', 'Reset your password'); reset.href = '/account-help.html#password-reset';
-                const help = element('a', 'Get sign-in help'); help.href = 'mailto:hello@nofries.nz';
+                const help = helpLink('Get sign-in help');
                 root.append(reset, element('span', ' · '), help);
                 if (supportReference) root.append(element('p', 'If this keeps happening, email hello@nofries.nz and quote reference ' + supportReference + '.'));
             } else {
@@ -129,7 +141,7 @@ function mountSignupJourney(root, client, { customerTransport, signInRecovery, s
                     : 'Create an account with your email, or sign in to your existing account.' : 'Continue secure sign-in with the email address you verified or that received your invitation.'));
             }
             // Browser cancellation backstop only. The server independently
-            // enforces its five-minute, one-use authentication transaction.
+            // enforces its own one-use authentication transaction deadline.
             const entry = button(chooseAccount ? 'Sign in with another account' : ['account', 'busy'].includes(signInRecovery) ? 'Try signing in again'
                 : signInRecovery ? 'Restart secure sign-in'
                 : entryIntent === 'create' ? 'Create account' : entryIntent === 'login' ? 'Log in' : 'Sign up or sign in',
