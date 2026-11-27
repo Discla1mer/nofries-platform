@@ -868,7 +868,7 @@
                     if (!live(token)) return boardBlock;
                     return questionnaire.boardSummaryBlock(node, button, win, detail, selectedMetadata(),
                         id + '-board-summary', status, boardBlock,
-                        (board, printed, copy, print) => boardPlanControls(handoff, boardBlock, board, printed, copy, print), displayedGaps);
+                        (board, printed, copy, print) => boardPlanControls(handoff, boardBlock, board, printed, copy, print), displayedGaps, previousSubmission());
                 };
                 if (options.boardExportGate) handoff.append(options.boardExportGate(() => boardExport(node('div', 'picture-board-summary'))));
                 else if (typeof options.readBoardPlan === 'function' && typeof options.openAction === 'function') {
@@ -881,16 +881,40 @@
             }
             handoff.append(status); return handoff;
         }
+        // #733: the submitted assessment just before this one, on the same
+        // questions, read once per view so the board summary can say it
+        // supersedes it. Skipped while other pages are unloaded, because an
+        // unseen submission could fall between the two.
+        let previousRead = null;
+        function previousSubmission() {
+            const key = epoch + ':' + detail.assessmentId;
+            if (previousRead && previousRead.key === key) return previousRead.promise;
+            const token = epoch, submittedAt = Date.parse(detail.updatedAt);
+            const earlier = after !== null ? [] : rows.filter(row => row.status === 'submitted' && row.assessmentId !== detail.assessmentId &&
+                sameProfile(row.profileRef, detail.profileRef) && Date.parse(row.updatedAt) < submittedAt).sort(newestFirst);
+            const promise = !earlier.length ? Promise.resolve(null) : call('read', earlier[0].assessmentId, token).then(response => {
+                const value = response && response.assessment;
+                return value && value.assessmentId === earlier[0].assessmentId && value.status === 'submitted' &&
+                    sameProfile(value.profileRef, detail.profileRef) ? value : null;
+            }, error => {
+                // A refusal clears the picture, as Compare does; other failures leave the summary as shown.
+                if (live(token) && refused(error)) { abort(); epoch++; failure({ statusCode: 403 }, null); render(); }
+                return null;
+            });
+            previousRead = { key, promise };
+            return promise;
+        }
         function boardPlanControls(handoff, boardBlock, board, boardPrinted, boardCopy, boardPrint) {
             if (typeof options.readBoardPlan !== 'function' || typeof options.openAction !== 'function') return;
             const source = improvementSelection(), token = epoch, binding = sourceBinding();
             if (!source) return;
-            const baseText = board.value, assignments = node('section', 'picture-board-actions');
+            let baseText = board.value, lastExtra = '';
+            const assignments = node('section', 'picture-board-actions');
             const note = node('p', 'dashboard-muted'); note.setAttribute('role', 'status');
             boardBlock.append(assignments, note);
             let attempt = 0;
             const current = () => currentSubmitted(token, binding, board);
-            const setText = extra => { board.value = baseText + extra; boardPrinted.textContent = board.value; };
+            const setText = extra => { lastExtra = extra; board.value = baseText + extra; boardPrinted.textContent = board.value; };
             const lock = busy => { boardCopy.disabled = busy; if (boardPrint) boardPrint.disabled = busy; };
             lock(true);
             async function checkAssignments() {
@@ -953,6 +977,8 @@
             handoff.addEventListener('toggle', checkAssignments);
             // A gate may release its content after the disclosure is already open.
             if (handoff.open) Promise.resolve().then(checkAssignments);
+            // #733: the summary text can gain its supersedes lines later; keep the saved owners after it.
+            return text => { baseText = text; setText(lastExtra); };
         }
         // Lead with the reported (lower) figure and explain both figures in plain words.
         function leadWithLowerBound(card, model) {

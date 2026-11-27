@@ -67,7 +67,7 @@ async function backend(createWith = NCSC_V2_CONTEXT, settings = {}) {
         return reply(response.body, response.status);
     });
     const profileMetadata = settings.profileMetadata === undefined ? [V2()] : settings.profileMetadata;
-    return { fetch, versions, organisationId: fixture.scope.organisationId,
+    return { fetch, versions, clock, organisationId: fixture.scope.organisationId,
         client: clientModule.createClient({ metadata: V1(), ...(profileMetadata ? { profileMetadata } : {}), fetch }),
         execute: command => repository.executeNcscAssessment(context, command) };
 }
@@ -214,6 +214,78 @@ describe('v2 results in the questionnaire', () => {
         expect(section('Not in place yet')).toContain('Limit supplier access');
         expect(section('Not yet confirmed')).toContain('Protect your business email');
         expect(section('Marked not applicable (to be confirmed)')).toContain('Protect and separate your network');
+    });
+
+    test('a later board summary says it supersedes the earlier one and lists the changed answers (#733)', async () => {
+        const answers = EXAMPLE.slice(); answers[0] = 'yes';
+        const { assessment } = await submittedV2(answers);
+        const earlier = JSON.parse(JSON.stringify(assessment));
+        earlier.assessmentId = 'assessment-earlier'; earlier.submission.submittedAt = '2026-11-19T04:17:00.000Z';
+        const metadata = V2();
+        earlier.responses = earlier.responses.map(row => row.itemId === metadata.questions[0].id ? { ...row, optionId: 'no' } : row);
+        const title = metadata.controls.find(control => control.id === metadata.questions[0].controlId).title;
+        const label = id => metadata.responseOptions.find(option => option.id === id).label;
+        const only = questionnaire.boardSummary(assessment, metadata).text;
+        expect(only).not.toMatch(/supersedes|Changes since/);
+        const board = questionnaire.boardSummary(assessment, metadata, [], earlier).text;
+        const lines = board.split('\n');
+        expect(lines[lines.findIndex(line => line.startsWith('Assessed: ')) + 1]).toMatch(/^This summary updates and supersedes the summary assessed .+\.$/);
+        const changes = board.split('\n\n').find(part => part.startsWith('Changes since the previous assessment:'));
+        expect(changes.split('\n').slice(1)).toEqual([`- ${title}${metadata.questions.filter(q => q.controlId === metadata.questions[0].controlId).length > 1 ? ' (question 1)' : ''}: ${label('no')} → ${label('yes')}`]);
+        // Same answers: the summary still supersedes, and says nothing changed.
+        const same = questionnaire.boardSummary(assessment, metadata, [], { ...earlier, responses: assessment.responses }).text;
+        expect(same).toContain('Changes since the previous assessment:\n- No answers changed.');
+        // Not an earlier submission on the same questions: no claim at all.
+        for (const other of [{ ...earlier, submission: { ...earlier.submission, submittedAt: '2027-01-01T00:00:00.000Z' } },
+            { ...earlier, assessmentId: assessment.assessmentId }, { ...earlier, profileRef: { ...earlier.profileRef, profileVersion: 'other' } }, null]) {
+            expect(questionnaire.boardSummary(assessment, metadata, [], other).text).toBe(only);
+        }
+    });
+
+    test('Results reads the previous submission once and its board summary supersedes it (#733)', async () => {
+        const h = await backend(), earlierAnswers = EXAMPLE.slice(), laterAnswers = EXAMPLE.slice(); laterAnswers[0] = 'yes';
+        await h.execute(createCommand('assessment-a', 'create-a')); await h.execute(saveCommand('assessment-a', 0, 'save-a', v2Answers(earlierAnswers)));
+        await h.execute(submitCommand('assessment-a', 1, 'submit-a'));
+        h.clock.advance(3600000);
+        await h.execute(createCommand('assessment-b', 'create-b')); await h.execute(saveCommand('assessment-b', 0, 'save-b', v2Answers(laterAnswers)));
+        await h.execute(submitCommand('assessment-b', 1, 'submit-b'));
+        const ui = mountUi(h);
+        try {
+            await until(() => listButton(ui)); listButton(ui).click();
+            const walk = node => [node, ...node.children.flatMap(walk)];
+            const board = () => walk(ui.root).find(node => node.id === 'ncsc-board-summary');
+            await until(() => board() && board().value.includes('supersedes'));
+            expect(board().value).toMatch(/\nChanges since the previous assessment:\n- [^\n]+: No → Yes, in place and checked\n/);
+            const reads = h.fetch.mock.calls.map(([url]) => decodeURIComponent(new URL(url, 'https://synthetic.invalid').pathname)).filter(path => path.endsWith('/assessment-a'));
+            expect(reads).toHaveLength(1);
+        } finally { ui.controller.destroy(); }
+    });
+
+    test('Results opened directly reads the history once and still supersedes; a refused read denies (#733)', async () => {
+        for (const refuse of [false, true]) {
+            const h = await backend(), laterAnswers = EXAMPLE.slice(); laterAnswers[0] = 'yes';
+            await h.execute(createCommand('assessment-a', 'create-a')); await h.execute(saveCommand('assessment-a', 0, 'save-a', v2Answers(EXAMPLE)));
+            await h.execute(submitCommand('assessment-a', 1, 'submit-a'));
+            h.clock.advance(3600000);
+            await h.execute(createCommand('assessment-b', 'create-b')); await h.execute(saveCommand('assessment-b', 0, 'save-b', v2Answers(laterAnswers)));
+            await h.execute(submitCommand('assessment-b', 1, 'submit-b'));
+            const client = refuse ? { ...h.client, read: async (id, settings) => {
+                if (id === 'assessment-a') { const error = new Error('denied'); error.statusCode = 403; error.code = 'ncsc_access_denied'; throw error; }
+                return h.client.read(id, settings);
+            } } : h.client;
+            const ui = mountUi(h, { client, initialAssessmentId: 'assessment-b' });
+            try {
+                const walk = node => [node, ...node.children.flatMap(walk)];
+                const board = () => walk(ui.root).find(node => node.id === 'ncsc-board-summary');
+                if (!refuse) {
+                    await until(() => board() && board().value.includes('supersedes'));
+                    expect(board().value).toContain('Changes since the previous assessment:');
+                } else {
+                    await until(() => ui.root.textContent.includes('This assessment is not available.'));
+                    expect(board()).toBeUndefined();
+                }
+            } finally { ui.controller.destroy(); }
+        }
     });
 
     test.each([[14, ACCEPTED_NCSC_CONTEXT], [16, NCSC_V2_CONTEXT]])(
