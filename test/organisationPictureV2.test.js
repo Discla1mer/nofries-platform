@@ -140,7 +140,9 @@ describe('Overview with v1 and v2 results in one organisation', () => {
         await until(() => dom.root.querySelector('.picture-trend-table'));
         const table = dom.root.querySelector('.picture-trend-table');
         expect(table.querySelector('tbody').children[0].textContent).toMatch(/^Overall/);
-        expect(dom.root.querySelector('.picture-trend').textContent).toContain('Both saved results use the same set of questions and question weights.');
+        // #731: one message; the question set is stated once, inside the warning.
+        expect(dom.root.querySelector('.picture-trend').querySelector('.ncsc-warning').textContent).toMatch(/^Same 16 questions and weights in both/);
+        expect(dom.root.querySelector('.picture-trend').textContent).not.toContain('Both saved results use the same set of questions');
         expect(dom.root.querySelector('.picture-trend-history').children).toHaveLength(2);
         expect(dom.root.querySelector('.picture-trend-history').textContent).not.toContain('Result unavailable');
 
