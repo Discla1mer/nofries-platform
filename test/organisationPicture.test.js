@@ -1220,6 +1220,37 @@ test('completing a comparison moves focus from the removed Compare button to the
     dom.controller.destroy();
 });
 
+test('the board summary supersedes the previous submission and lists the changed answers (#733)', async () => {
+    const earlier = submittedAt('assessment-earlier', '2026-09-10T00:00:00.000Z', allResponses('no'));
+    const later = submittedAt('assessment-later', '2026-10-10T00:00:00.000Z', mixedResponses());
+    const { client, reads, writes } = trendClient([earlier, later]);
+    const dom = setup({ client, options: { initialAssessmentId: later.assessmentId } }); await flush(); await flush();
+    const walk = node => [node, ...node.children.flatMap(walk)];
+    const board = walk(dom.root).find(node => node.tagName === 'TEXTAREA' && /-board-summary$/.test(node.id));
+    assert.ok(board);
+    assert.match(board.value, /\nThis summary updates and supersedes the summary assessed .+\.\n/);
+    const changes = board.value.split('\n\n').find(part => part.startsWith('Changes since the previous assessment:')).split('\n').slice(1);
+    const moved = mixedResponses().filter(row => row.optionId !== 'no').length;
+    assert.equal(changes.length, moved); assert.ok(moved > 0);
+    assert.ok(changes.every(line => /^- .+: No → /.test(line) && !/: No → No$/.test(line)));
+    const printed = walk(dom.root).find(node => node.tagName === 'PRE' && node.className.includes('picture-board-print'));
+    assert.equal(printed.textContent, board.value);
+    // One extra read of the earlier submission, and no writes.
+    assert.deepEqual(reads, [later.assessmentId, earlier.assessmentId]); assert.equal(writes(), 0);
+    dom.controller.destroy();
+});
+
+test('a single submission makes no supersedes claim and reads nothing else (#733)', async () => {
+    const only = submittedAt('assessment-only', '2026-10-10T00:00:00.000Z', mixedResponses());
+    const { client, reads } = trendClient([only]);
+    const dom = setup({ client, options: { initialAssessmentId: only.assessmentId } }); await flush(); await flush();
+    const walk = node => [node, ...node.children.flatMap(walk)];
+    const board = walk(dom.root).find(node => node.tagName === 'TEXTAREA' && /-board-summary$/.test(node.id));
+    assert.doesNotMatch(board.value, /supersedes|Changes since/);
+    assert.deepEqual(reads, [only.assessmentId]);
+    dom.controller.destroy();
+});
+
 test('different scopes suppress change, and the earliest record has no previous result', async () => {
     const earlier = submittedAt('assessment-earlier', '2026-09-10T00:00:00.000Z', allResponses('yes'), 'Head office only.');
     const later = submittedAt('assessment-later', '2026-10-10T00:00:00.000Z', mixedResponses());
@@ -1229,10 +1260,11 @@ test('different scopes suppress change, and the earliest record has no previous 
     assert.deepEqual(trendRows(dom)[0], ['Overall', '100.0%', '46.4%–60.7%']);
     assert.match(trendSection(dom).querySelector('.ncsc-warning').textContent, /your business details \(scope\) differ, so this is not a measure of improvement or decline/);
     change(dom.root.querySelector('.picture-toolbar').querySelector('select'), earlier.assessmentId); await flush();
-    assert.equal(reads.length, 3);
+    // Includes the later view's one read of the earlier result for its board summary (#733).
+    assert.equal(reads.length, 4);
     assert.equal(trendSection(dom).querySelectorAll('button').map(button => button.textContent).join(), 'Compare with later assessments');
     click(dom, 'Compare with later assessments'); await flush();
-    assert.equal(reads.length, 4);
+    assert.equal(reads.length, 5);
     assert.match(trendSection(dom).textContent, /earliest submitted assessment shown, so there is nothing earlier to compare/);
     assert.equal(trendSection(dom).querySelector('table'), null);
     assert.equal(trendSection(dom).querySelectorAll('li').length, 2);

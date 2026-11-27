@@ -263,13 +263,36 @@
     // says so, and the next-step line is left for the customer to fill in.
     // gaps: the ranked top gaps shown on screen (#441 M1-13). The board summary
     // opens with them, in the same order, before the answers grouped by status.
-    function boardSummary(assessment, metadata, gaps) {
+    // #733: the earlier submitted assessment on the same questions, if the
+    // caller could load it. Returns null for anything that is not one.
+    function earlierSubmission(assessment, previous) {
+        if (!previous || !Array.isArray(previous.responses) || !previous.submission || !previous.submission.submittedAt ||
+            previous.assessmentId === assessment.assessmentId || !profileMatches(previous.profileRef, assessment.profileRef) ||
+            !(Date.parse(previous.submission.submittedAt) < Date.parse(assessment.submission.submittedAt))) return null;
+        return previous;
+    }
+    function boardSummary(assessment, metadata, gaps, previousInput) {
         const optionOf = function (id) { const response = assessment.responses.find(function (item) { return item.itemId === id; }); return response ? response.optionId : null; };
+        const previous = earlierSubmission(assessment, previousInput);
         const groups = [['yes', 'In place'], ['partial', 'Partly in place'], ['no', 'Not in place yet'], ['unknown', 'Not yet confirmed'], ['not_applicable', 'Marked not applicable (to be confirmed)']];
         const lines = ['Cyber security position: summary for the board or insurer', 'Scope: ' + assessment.scopePopulation.description,
             'Assessed: ' + localDate(assessment.submission.submittedAt),
+            ...(previous ? ['This summary updates and supersedes the summary assessed ' + localDate(previous.submission.submittedAt) + '.'] : []),
             'Basis: self-assessment using the No Fries questionnaire adapted from New Zealand NCSC guidance. Not certification or independent assurance.'];
         if (Array.isArray(gaps) && gaps.length) lines.push('', 'What needs attention first:', ...gaps.map(function (gap, index) { return (index + 1) + '. ' + gap.title + ' (your answer: ' + gap.answer + ')'; }));
+        if (previous) {
+            // The answers that moved, in question order, by plain title (#733).
+            const label = function (optionId) { const option = (metadata.responseOptions || []).find(function (item) { return item.id === optionId; }); return option ? option.label : 'Not answered'; };
+            const earlierOf = function (id) { const response = previous.responses.find(function (item) { return item.itemId === id; }); return response ? response.optionId : null; };
+            const changes = metadata.questions.filter(function (question) { return earlierOf(question.id) !== optionOf(question.id); }).map(function (question) {
+                const control = metadata.controls.find(function (item) { return item.id === question.controlId; });
+                const siblings = metadata.questions.filter(function (item) { return item.controlId === question.controlId; });
+                const title = (control ? control.title : question.prompt).replace(/^No Fries Critical Control extension — /, '') +
+                    (siblings.length > 1 ? ' (question ' + (siblings.indexOf(question) + 1) + ')' : '');
+                return '- ' + title + ': ' + label(earlierOf(question.id)) + ' → ' + label(optionOf(question.id));
+            });
+            lines.push('', 'Changes since the previous assessment:', ...(changes.length ? changes : ['- No answers changed.']));
+        }
         groups.forEach(function (group) {
             const titles = [];
             metadata.questions.filter(function (question) { return answerGroup(optionOf(question.id)) === group[0]; }).forEach(function (question) {
@@ -388,15 +411,23 @@
     }
     // Shared with Overview so campaign presentation keeps the same copy, print,
     // enquiry availability and representative-details controls.
-    function boardSummaryBlock(node, button, win, detail, metadata, inputId, status, boardBlock = node('div', 'picture-board-summary'), addPlanControls, gaps) {
+    // previous (#733): the earlier submitted assessment, or a promise of it.
+    // The summary shows at once and gains the supersedes lines when it arrives.
+    function boardSummaryBlock(node, button, win, detail, metadata, inputId, status, boardBlock = node('div', 'picture-board-summary'), addPlanControls, gaps, previous) {
         const boardLabel = node('label', '', 'Summary for your board or insurer');
         const board = node('textarea', 'ncsc-textarea'); board.id = inputId; boardLabel.htmlFor = board.id;
-        board.readOnly = true; board.rows = 8; board.value = boardSummary(detail, metadata, gaps).text;
+        const settled = previous && typeof previous.then === 'function' ? null : previous;
+        board.readOnly = true; board.rows = 8; board.value = boardSummary(detail, metadata, gaps, settled).text;
         const boardPrinted = node('pre', 'picture-summary-print picture-board-print', board.value); boardPrinted.setAttribute('aria-hidden', 'true');
+        if (previous && typeof previous.then === 'function') previous.then(function (value) {
+            if (!earlierSubmission(detail, value)) return;
+            const text = boardSummary(detail, metadata, gaps, value).text;
+            if (typeof rebase === 'function') rebase(text); else { board.value = text; boardPrinted.textContent = text; }
+        }, function () { /* Without the earlier result the summary stays as shown. */ });
         const boardCopy = button('Copy board summary', () => copySummary(win, board, status));
         boardCopy.classList.add('dashboard-button-secondary'); boardBlock.append(boardLabel, board, boardPrinted);
         const boardPrint = win && typeof win.print === 'function' ? button('Print board summary', () => printOnly(win, boardPrinted)) : null;
-        if (addPlanControls) addPlanControls(board, boardPrinted, boardCopy, boardPrint);
+        const rebase = addPlanControls ? addPlanControls(board, boardPrinted, boardCopy, boardPrint) : null;
         boardBlock.append(boardCopy);
         if (boardPrint) { boardPrint.classList.add('dashboard-button-secondary'); boardBlock.append(boardPrint); }
         return boardBlock;
@@ -970,6 +1001,25 @@
                     : await client[method](args, keepalive ? { signal: request.signal, keepalive: true } : { signal: request.signal });
                 return live(expected) ? result : null;
             } finally { requests.delete(request); }
+        }
+        // #733: the submitted assessment just before the one shown, on the same
+        // questions, read once per view. Only from a fully loaded list: an
+        // unloaded page could hold a submission between the two.
+        let previousRead = null;
+        function previousSubmission() {
+            const current = acknowledged, key = epoch + ':' + (current && current.assessmentId);
+            if (previousRead && previousRead.key === key) return previousRead.promise;
+            const expected = epoch, submittedAt = current && current.submission ? Date.parse(current.submission.submittedAt) : NaN;
+            const earlier = !listLoaded || nextAfter !== null || !current ? [] : summaries.filter(function (item) {
+                return item.status === 'submitted' && item.assessmentId !== current.assessmentId &&
+                    profileMatches(item.profileRef, current.profileRef) && Date.parse(item.updatedAt) < submittedAt;
+            }).sort(function (left, right) { return right.updatedAt.localeCompare(left.updatedAt); });
+            const promise = !earlier.length ? Promise.resolve(null) : call('read', earlier[0].assessmentId, expected).then(function (result) {
+                const value = result && result.assessment;
+                return value && value.assessmentId === earlier[0].assessmentId && value.status === 'submitted' ? value : null;
+            }, function () { return null; });
+            previousRead = { key: key, promise: promise };
+            return promise;
         }
         function cleanDetail(value, id) {
             const profile = value && profileFor(value.profileRef);
@@ -1899,7 +1949,7 @@
                 const section = node('section', 'ncsc-board-next-step picture-summary');
                 const copied = node('p', 'dashboard-muted'); copied.setAttribute('role', 'status');
                 section.append(node('h3', '', 'Summary for your board or insurer'),
-                    boardExportGate(() => boardSummaryBlock(node, button, win, acknowledged, metadata, 'ncsc-board-summary', copied, undefined, undefined, topGaps(results, metadata))), copied);
+                    boardExportGate(() => boardSummaryBlock(node, button, win, acknowledged, metadata, 'ncsc-board-summary', copied, undefined, undefined, topGaps(results, metadata), previousSubmission())), copied);
                 if (campaign === 'board' && topGaps(results, metadata, 1).length) {
                     section.append(node('p', '', 'Use a reported gap to agree a next action, an owner and a date with your board.'),
                         button('Go to your top gaps', function () {
