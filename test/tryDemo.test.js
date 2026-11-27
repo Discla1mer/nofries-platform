@@ -238,7 +238,7 @@ test('start mounts the real shell with the real Overview and Cyber Security work
     assert.equal(storage.values.get('nofries.unrelated'), 'kept');
     assert.match(nodes['try-demo-status'].textContent, /^Demo reset\./);
     assert.equal(dom.root.querySelector('h1').textContent, 'Overview');
-    assert.deepEqual([...storage.touched].sort(), [demo.LEGACY_STORAGE_KEY, demo.STORAGE_KEY].sort());
+    assert.deepEqual([...storage.touched].sort(), [...demo.LEGACY_STORAGE_KEYS, demo.STORAGE_KEY].sort());
 });
 
 test('a malformed request body is a 400 ncsc_input_invalid problem and records nothing', async () => {
@@ -253,20 +253,23 @@ test('a malformed request body is a 400 ncsc_input_invalid problem and records n
     assert.equal(storage.values.has(demo.STORAGE_KEY), false);
 });
 
-test('start removes the legacy v1 key once, and reset removes it again with the current key', () => {
+test('start removes the legacy v1 and v2 keys once, and reset removes them again with the current key', () => {
     const dom = createDom();
-    const storage = recordingStorage({ [demo.LEGACY_STORAGE_KEY]: '{"answers":{}}', 'nofries.unrelated': 'kept' });
+    const legacy = () => Object.fromEntries(demo.LEGACY_STORAGE_KEYS.map(key => [key, '{"answers":{}}']));
+    const storage = recordingStorage({ ...legacy(), 'nofries.unrelated': 'kept' });
     const nodes = { 'try-demo-dashboard': dom.root, 'try-demo-status': dom.document.createElement('p'), 'try-demo-reset': dom.document.createElement('button') };
     dom.document.getElementById = id => nodes[id];
     Object.assign(dom.window, { document: dom.document, localStorage: storage, NoFriesDashboard: shell, NoFriesNcscAssessmentClient: { createClient },
         NoFriesNcscQuestionnaire: questionnaire });
     dom.window.location.pathname = '/try';
     demo.start(dom.window);
-    assert.equal(demo.LEGACY_STORAGE_KEY, 'nofries.tryDemo.v1');
-    assert.equal(storage.values.has(demo.LEGACY_STORAGE_KEY), false);
-    storage.setItem(demo.LEGACY_STORAGE_KEY, '{"answers":{}}'); storage.setItem(demo.STORAGE_KEY, JSON.stringify({ log: [] }));
+    // v2 held answers for the earlier 14-question set; the 16-question demo starts afresh under v3.
+    assert.deepEqual([...demo.LEGACY_STORAGE_KEYS], ['nofries.tryDemo.v1', 'nofries.tryDemo.v2']);
+    assert.equal(demo.STORAGE_KEY, 'nofries.tryDemo.v3');
+    for (const key of demo.LEGACY_STORAGE_KEYS) assert.equal(storage.values.has(key), false, key);
+    Object.entries(legacy()).forEach(([key, value]) => storage.setItem(key, value)); storage.setItem(demo.STORAGE_KEY, JSON.stringify({ log: [] }));
     nodes['try-demo-reset'].click();
-    assert.equal(storage.values.has(demo.LEGACY_STORAGE_KEY), false);
+    for (const key of demo.LEGACY_STORAGE_KEYS) assert.equal(storage.values.has(key), false, key);
     assert.equal(storage.values.has(demo.STORAGE_KEY), false);
     assert.equal(storage.values.get('nofries.unrelated'), 'kept');
 });

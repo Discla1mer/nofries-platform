@@ -16,9 +16,11 @@
 
     // Fictional demonstration only (#29). No real organisation, person or record.
     // Answers live in memory and in one browser-storage key; nothing is sent anywhere.
-    const STORAGE_KEY = 'nofries.tryDemo.v2';
-    // Earlier releases kept answers under this key. Nothing reads it now; reset and start remove it.
-    const LEGACY_STORAGE_KEY = 'nofries.tryDemo.v1';
+    // v3: the 16-question check (scoring v2). Answers saved for the earlier
+    // 14-question set are never replayed into it.
+    const STORAGE_KEY = 'nofries.tryDemo.v3';
+    // Earlier releases kept answers under these keys. Nothing reads them now; reset and start remove them.
+    const LEGACY_STORAGE_KEYS = Object.freeze(['nofries.tryDemo.v1', 'nofries.tryDemo.v2']);
     const BUSINESS = 'Brightwater Joinery (fictional)';
     const ORGANISATION_ID = 'fictional-demo';
     const PREFIX = '/api/dashboard/ncsc/assessments';
@@ -187,9 +189,9 @@
             },
             clear: function () {
                 memory = null;
-                [STORAGE_KEY, LEGACY_STORAGE_KEY].forEach(function (key) { try { storage.removeItem(key); } catch (_) { /* nothing stored */ } });
+                [STORAGE_KEY].concat(LEGACY_STORAGE_KEYS).forEach(function (key) { try { storage.removeItem(key); } catch (_) { /* nothing stored */ } });
             },
-            clearLegacy: function () { try { storage.removeItem(LEGACY_STORAGE_KEY); } catch (_) { /* nothing stored */ } }
+            clearLegacy: function () { LEGACY_STORAGE_KEYS.forEach(function (key) { try { storage.removeItem(key); } catch (_) { /* nothing stored */ } }); }
         };
     }
 
@@ -283,7 +285,7 @@
         mountDashboard(null);
     }
 
-    return Object.freeze({ STORAGE_KEY: STORAGE_KEY, LEGACY_STORAGE_KEY: LEGACY_STORAGE_KEY, BUSINESS: BUSINESS, ORGANISATION_ID: ORGANISATION_ID,
+    return Object.freeze({ STORAGE_KEY: STORAGE_KEY, LEGACY_STORAGE_KEYS: LEGACY_STORAGE_KEYS, BUSINESS: BUSINESS, ORGANISATION_ID: ORGANISATION_ID,
         EARLIER_ID: EARLIER_ID,
         projection: projection, createServer: createServer, createStore: createStore, createBackend: createBackend,
         pageFetch: pageFetch, mountOptions: mountOptions, start: start });
