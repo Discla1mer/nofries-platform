@@ -1139,7 +1139,9 @@ test('a single submitted assessment explains that there is nothing to compare ye
     assert.equal(section.querySelector('h3').textContent, 'Change over time');
     assert.match(section.textContent, /This is the only submitted assessment so far\. Another submitted assessment is needed/);
     // #719: the single-result state says what a second assessment is for.
-    assert.match(section.textContent, /A second assessment shows whether the gaps you worked on have closed\./);
+    assert.match(section.textContent, /A second assessment shows whether the gaps you worked on have closed\. Repeat the check in six to twelve months, or after a big change such as switching IT providers\./);
+    // The interval is advice, not a claim about what other businesses do.
+    assert.doesNotMatch(section.textContent, /Most small businesses/);
     assert.equal(section.querySelectorAll('button').length, 0);
     const opened = [];
     const linked = setup({ client: trendClient([only, draft]).client, options: { initialAssessmentId: only.assessmentId, openCyber: (...args) => opened.push(args) } }); await flush();
