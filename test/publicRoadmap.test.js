@@ -34,7 +34,9 @@ test('every item has source PRs; only Done has release proof and a period', () =
                 'https://github.com/Discla1mer/nofries-platform/issues/500#issuecomment-7074327704',
                 // Activation of the paid-frameworks and deferred-details flags on 62a9702.
                 'https://github.com/Discla1mer/nofries-platform/issues/151#issuecomment-7084596099',
-                'https://github.com/Discla1mer/nofries-platform/issues/151#issuecomment-7122999986'
+                'https://github.com/Discla1mer/nofries-platform/issues/151#issuecomment-7122999986',
+                // Scoring v2 switched on in production with release 8377e3c.
+                'https://github.com/Discla1mer/nofries-platform/issues/151#issuecomment-7204359198'
             ]).toContain(item.release);
             for (const pr of item.prs) expect(source).toMatch(new RegExp(`\\| \\[#${pr}\\]\\([^\\n]+\\| \\x60[a-f0-9]{40}\\x60 \\|`));
         } else {
@@ -114,7 +116,7 @@ test('942ea19 examples and the activated items are Done in Oct–Dec 2026', () =
         expect(data.items.find(item => item.id === id)).toMatchObject({ period: 'Oct–Dec 2026', lane: 'Done',
             release: 'https://github.com/Discla1mer/nofries-platform/issues/151#issuecomment-7084596099' });
     }
-    expect(data.lastUpdated).toBe('2026-11-26');
+    expect(data.lastUpdated).toBe('2026-11-28');
     expect(data.items.filter(item => item.lane === 'Done' && item.period !== 'Oct–Dec 2026')).toEqual([]);
 });
 
@@ -136,4 +138,14 @@ test('every item belongs to one line of work with a short map label', () => {
     }
     expect(html).toContain('<script src="/js/roadmap.js" defer></script>');
     expect(html).not.toMatch(/ style="/);
+});
+
+test('no planned item describes a question count that Done or the homepage already claims (#683)', () => {
+    const count = /\b(\d+)[- ]question/g, counts = text => new Set([...text.matchAll(count)].map(match => match[1]));
+    const live = counts(data.items.filter(item => item.lane === 'Done').map(item => item.text).join(' '));
+    for (const number of counts(read('index.html').replace(/<[^>]+>/g, ' ').replace(/(\d+) questions/g, '$1-question'))) live.add(number);
+    expect(live.has('16')).toBe(true);
+    for (const item of data.items.filter(item => item.lane !== 'Done'))
+        for (const number of counts(item.text)) expect([item.id, live.has(number)]).toEqual([item.id, false]);
+    expect(data.items.find(item => item.id === 'weighted-assessment').lane).toBe('Done');
 });
