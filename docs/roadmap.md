@@ -43,8 +43,11 @@ The two earlier information items from `942ea19` are superseded: the
 "Information about planned assessments" item is removed because the paid item
 now describes the capability itself, and the fictional examples item no longer
 says the assessments are unavailable. The fictional examples remain unlisted and
-noindex. Scoring v2 (`NOFRIES_NCSC_PROFILE_V2`) stays off per the same receipt,
-so "Updated NCSC questions" stays In progress.
+noindex. Scoring v2 (`NOFRIES_NCSC_PROFILE_V2`) was switched on in production on
+27 November 2026 with release `8377e3c`
+([receipt](https://github.com/Discla1mer/nofries-platform/issues/151#issuecomment-7204359198)),
+so "Updated NCSC questions" is Done. If that flag is ever turned off, move the
+item back and change the 16-question copy on the homepage and sample result.
 
 The service note follows #543’s published responsibility distinction: working
 through three improvements does not include hands-on implementation unless it is
@@ -66,6 +69,7 @@ by the description and the public feature-status registry.
 | --- | --- | --- |
 | [#567](https://github.com/Discla1mer/nofries-platform/pull/567) | `d2b63739c47092192b0be0cf395e4cc2342c3a82` | [24 November release receipt](https://github.com/Discla1mer/nofries-platform/issues/151#issuecomment-7122999986): consultant landing fix for #561. |
 | [#563](https://github.com/Discla1mer/nofries-platform/pull/563) | `8f7443f1302e89be1767f5b8a6df2f375e53f0ed` | [24 November release receipt](https://github.com/Discla1mer/nofries-platform/issues/151#issuecomment-7122999986): included in `64aed4c`; #564 adds tests only. |
+| [#681](https://github.com/Discla1mer/nofries-platform/pull/681) | `8377e3c54e7a6d943c6ea550bb8db8daec69609b` | [27 November release receipt](https://github.com/Discla1mer/nofries-platform/issues/151#issuecomment-7204359198): released as `8377e3c`; activated by `NOFRIES_NCSC_PROFILE_V2`. |
 | [#249](https://github.com/Discla1mer/nofries-platform/pull/249) | `82a4bf4df2f040a75102b949cd70bbc9b6f786fc` | Ancestor of `9977199`. |
 | [#300](https://github.com/Discla1mer/nofries-platform/pull/300) | `70bad3bb4e742688e0f36f51fe5a20ec364fce0b` | Ancestor of `9977199`. |
 | [#397](https://github.com/Discla1mer/nofries-platform/pull/397) | `dbe81b8dbc2649bb9c8bf8674e57a5d4dee9c286` | Ancestor of `9977199`. |
@@ -98,7 +102,7 @@ release-engineering evidence.
 ```json
 {
   "title": "Where the No Fries dashboard is heading",
-  "lastUpdated": "2026-11-26",
+  "lastUpdated": "2026-11-28",
   "lead": "Four lines of work, from the free NCSC check to proving your controls. Select any stop for the detail.",
   "notice": "Planned work has no confirmed dates. Scope, order and availability may change, and planned work does not promise subscription inclusion.",
   "serviceNote": "Managed IT and 90-day managed security are separate services.",
@@ -117,7 +121,7 @@ release-engineering evidence.
     {"id": "consultant-dashboard", "lane": "Done", "theme": "run", "short": "Consultant fix", "period": "Oct–Dec 2026", "title": "Consultant dashboard after sign-in", "text": "Fixed an issue that could stop consultants opening their dashboard after signing in, while it was checking paid assessment status.", "prs": [567], "release": "https://github.com/Discla1mer/nofries-platform/issues/151#issuecomment-7122999986"},
     {"id": "dashboard-support-reference", "lane": "Done", "theme": "run", "short": "Support ref", "period": "Oct–Dec 2026", "title": "A reference for dashboard support", "text": "Some temporary problems loading your dashboard now show a support reference. If you see one, give it to No Fries when you ask for help.", "prs": [563], "release": "https://github.com/Discla1mer/nofries-platform/issues/151#issuecomment-7122999986"},
     {"id": "signup-return", "lane": "In progress", "theme": "run", "short": "Finish sign-up", "title": "Returning to an unfinished sign-up", "text": "Planned guidance that brings an interrupted sign-up back to the same account. These changes are still being checked.", "prs": [424]},
-    {"id": "weighted-assessment", "lane": "In progress", "theme": "check", "short": "16 questions", "title": "Updated NCSC questions", "text": "A planned 16-question assessment with weighted scoring. Existing submitted results keep their original scoring.", "prs": [440]},
+    {"id": "weighted-assessment", "lane": "Done", "theme": "check", "short": "16 questions", "period": "Oct–Dec 2026", "title": "Updated NCSC questions", "text": "New sign-ups and new client organisations get the 16-question assessment with weighted scoring. Results submitted on the earlier 14 questions keep their original scoring.", "prs": [440, 681], "release": "https://github.com/Discla1mer/nofries-platform/issues/151#issuecomment-7204359198"},
     {"id": "contact-request", "lane": "In progress", "theme": "fix", "short": "Ask us to call", "title": "Ask No Fries to contact you", "text": "A planned request button on results and Services that explains what staff will see before you choose it. Nothing is shared through this request unless you ask. This is separate from the existing link to the contact form.", "prs": [440, 454, 461]},
     {"id": "review-not-applicable", "lane": "Next", "theme": "check", "short": "Review N/A", "title": "Review of not applicable answers", "text": "A planned way to review and confirm answers marked not applicable. For now, these answers count as not yet met and stay in your result; no review changes that.", "prs": [440, 480]},
     {"id": "update-answers", "lane": "Next", "theme": "check", "short": "Update answers", "title": "Update submitted answers", "text": "Planned ways to update submitted answers and refresh the result without starting again.", "prs": [249, 440]},

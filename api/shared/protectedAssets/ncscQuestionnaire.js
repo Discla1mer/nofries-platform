@@ -271,6 +271,19 @@
             !(Date.parse(previous.submission.submittedAt) < Date.parse(assessment.submission.submittedAt))) return null;
         return previous;
     }
+    // #696: scoring v2 has controls with two questions (backups and restore
+    // tests; MFA coverage and method). A bare control title then appears twice,
+    // under two different answers. Name the part each question covers; an
+    // unknown two-question control falls back to its question number.
+    const QUESTION_ASPECT = Object.freeze({
+        'NF-NCSC-MCSS-MF-01-Q1': 'coverage', 'NF-NCSC-MCSS-MF-01-Q2': 'method',
+        'NF-NCSC-MCSS-DR-01-Q1': 'backups', 'NF-NCSC-MCSS-DR-01-Q2': 'restore tests'
+    });
+    function questionTitle(metadata, question, base) {
+        const siblings = metadata.questions.filter(function (item) { return item.controlId === question.controlId; });
+        if (siblings.length < 2) return base;
+        return base + ': ' + (QUESTION_ASPECT[question.id] || 'question ' + (siblings.indexOf(question) + 1));
+    }
     function boardSummary(assessment, metadata, gaps, previousInput) {
         const optionOf = function (id) { const response = assessment.responses.find(function (item) { return item.itemId === id; }); return response ? response.optionId : null; };
         const previous = earlierSubmission(assessment, previousInput);
@@ -286,9 +299,7 @@
             const earlierOf = function (id) { const response = previous.responses.find(function (item) { return item.itemId === id; }); return response ? response.optionId : null; };
             const changes = metadata.questions.filter(function (question) { return earlierOf(question.id) !== optionOf(question.id); }).map(function (question) {
                 const control = metadata.controls.find(function (item) { return item.id === question.controlId; });
-                const siblings = metadata.questions.filter(function (item) { return item.controlId === question.controlId; });
-                const title = (control ? control.title : question.prompt).replace(/^No Fries Critical Control extension — /, '') +
-                    (siblings.length > 1 ? ' (question ' + (siblings.indexOf(question) + 1) + ')' : '');
+                const title = questionTitle(metadata, question, (control ? control.title : question.prompt).replace(/^No Fries Critical Control extension — /, ''));
                 return '- ' + title + ': ' + label(earlierOf(question.id)) + ' → ' + label(optionOf(question.id));
             });
             lines.push('', 'Changes since the previous assessment:', ...(changes.length ? changes : ['- No answers changed.']));
@@ -298,7 +309,7 @@
             metadata.questions.filter(function (question) { return answerGroup(optionOf(question.id)) === group[0]; }).forEach(function (question) {
                 const control = metadata.controls.find(function (item) { return item.id === question.controlId; });
                 // Plain titles for a board: drop the internal extension prefix.
-                const title = (control ? control.title : question.prompt).replace(/^No Fries Critical Control extension — /, '');
+                const title = questionTitle(metadata, question, (control ? control.title : question.prompt).replace(/^No Fries Critical Control extension — /, ''));
                 if (titles.indexOf(title) === -1) titles.push(title);
             });
             if (titles.length) lines.push('', group[1] + ':', ...titles.map(function (title) { return '- ' + title; }));
@@ -483,7 +494,7 @@
             const control = controls.get(question.controlId), guidance = question.guidance || {};
             const plain = question.smallBusiness || {};
             const title = firstText(control && control.title, question.prompt);
-            return { itemId: question.id, title: title.split(' — ').pop(), answer: row.answer,
+            return { itemId: question.id, title: questionTitle(metadata, question, title.split(' — ').pop()), answer: row.answer,
                 responseOptionId: row.responseOptionId,
                 firstCheck: firstText((plain.checks || [])[0], (guidance.startingActions || [])[0]) || GAP_NEXT,
                 why: firstText(guidance.summary) || GAP_WHY,
@@ -2113,7 +2124,10 @@
             const copied = node('p', 'dashboard-muted'); copied.setAttribute('role', 'status');
             const copy = button('Copy summary', function () { copySummary(win, input, copied); }, 'dashboard-button dashboard-button-secondary');
             handoff.append(copy);
-            if (win && typeof win.print === 'function') handoff.append(button('Print these results', function () { win.print(); }, 'dashboard-button dashboard-button-secondary'));
+            // Paper gets the summary itself, not the whole dashboard (#662): title,
+            // scope, date and the follow-ups, with no navigation or account details.
+            const printed = node('pre', 'picture-summary-print', summary.text); printed.setAttribute('aria-hidden', 'true'); handoff.append(printed);
+            if (win && typeof win.print === 'function') handoff.append(button('Print these results', function () { printOnly(win, printed); }, 'dashboard-button dashboard-button-secondary'));
             handoff.append(copied); section.append(handoff); panel.append(section);
         }
         function renderQuestionnaireAnswers(panel) {
@@ -2147,7 +2161,7 @@
                 const input = node('textarea', 'ncsc-textarea'); input.id = label.htmlFor; input.readOnly = true; input.rows = 5; input.value = report.text;
                 const copied = node('p', 'dashboard-muted'); copied.setAttribute('role', 'status');
                 controls.append(label, input, button('Copy answers', function () { copySummary(win, input, copied); }, 'dashboard-button dashboard-button-secondary'));
-                if (win && typeof win.print === 'function') controls.append(button('Print answers', function () { win.print(); }, 'dashboard-button dashboard-button-secondary'));
+                if (win && typeof win.print === 'function') controls.append(button('Print answers', function () { printOnly(win, section); }, 'dashboard-button dashboard-button-secondary'));
                 controls.append(copied);
                 if (gated) section.setAttribute('data-export-ready', 'true');
                 return controls;
@@ -2844,5 +2858,5 @@
         else openAssessment(initialAssessmentId);
         return controller;
     }
-    return Object.freeze({ mount: mount, topGaps, confirmNext, v2Shortfall, rankedGapSection, resultModel: resultModel, providerSummary: providerSummary, boardSummary: boardSummary, questionnaireAnswers: questionnaireAnswers, resultsCampaign: resultsCampaign, boardSummaryBlock: boardSummaryBlock, managedSecurityOffer: managedSecurityOffer, copySummary: copySummary, enoughAnswersToEstimate: enoughAnswersToEstimate });
+    return Object.freeze({ mount: mount, topGaps, confirmNext, v2Shortfall, rankedGapSection, resultModel: resultModel, providerSummary: providerSummary, boardSummary: boardSummary, questionnaireAnswers: questionnaireAnswers, resultsCampaign: resultsCampaign, boardSummaryBlock: boardSummaryBlock, printOnly: printOnly, managedSecurityOffer: managedSecurityOffer, copySummary: copySummary, enoughAnswersToEstimate: enoughAnswersToEstimate });
 }));

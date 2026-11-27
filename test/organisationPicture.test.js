@@ -1138,6 +1138,18 @@ test('a single submitted assessment explains that there is nothing to compare ye
     const section = trendSection(dom);
     assert.equal(section.querySelector('h3').textContent, 'Change over time');
     assert.match(section.textContent, /This is the only submitted assessment so far\. Another submitted assessment is needed/);
+    // #719: the single-result state says what a second assessment is for.
+    assert.match(section.textContent, /A second assessment shows whether the gaps you worked on have closed\. Repeat the check in six to twelve months, or after a big change such as switching IT providers\./);
+    // The interval is advice, not a claim about what other businesses do.
+    assert.doesNotMatch(section.textContent, /Most small businesses/);
+    assert.equal(section.querySelectorAll('button').length, 0);
+    const opened = [];
+    const linked = setup({ client: trendClient([only, draft]).client, options: { initialAssessmentId: only.assessmentId, openCyber: (...args) => opened.push(args) } }); await flush();
+    // The host opens the saved-assessment list here, so the button says so.
+    const again = trendSection(linked).querySelectorAll('button').find(item => item.textContent === 'Go to your assessments');
+    again.click(); assert.deepEqual(opened, [[undefined]]);
+    assert.match(trendSection(linked).textContent, /You can start another from your assessments\./);
+    linked.controller.destroy();
     assert.equal(section.querySelectorAll('button').length, 0);
     assert.equal(section.querySelector('table'), null);
     assert.deepEqual(reads, [only.assessmentId]);
@@ -1701,7 +1713,16 @@ describe('next step under the top gaps', () => {
         press('Copy summary'); await flush();
         assert.equal(status.textContent, 'Summary selected. Press Ctrl+C or Cmd+C to copy it.');
         assert.equal(dom.document.activeElement, input);
+        // #662: paper gets the summary alone; the rest of the page is hidden for print only, then restored.
+        const summaryPrinted = handoff.querySelectorAll('.picture-summary-print').find(item => !item.classList.contains('picture-board-print'));
+        assert.equal(summaryPrinted.textContent, input.value);
+        print.mockImplementationOnce(() => {
+            assert.ok(summaryPrinted.classList.contains('picture-print-only'));
+            assert.ok(input.classList.contains('picture-print-hide'));
+        });
         press('Print these results'); assert.equal(print.mock.calls.length, 1);
+        assert.equal(summaryPrinted.classList.contains('picture-print-only'), false);
+        assert.equal(dom.root.querySelectorAll('.picture-print-hide').length, 0);
         // Print board summary hides everything else for print only, then restores the page.
         const boardPrinted = handoff.querySelector('.picture-board-print');
         print.mockImplementationOnce(() => {
@@ -1797,8 +1818,10 @@ test('Actions card stays hidden until there is a submitted result', async () => 
 test('Actions card empty state links to the top three gaps panel', async () => {
     const dom = actionsCard({ value: { more: false, lists: [] } }); await flush();
     const card = dom.root.querySelector('.picture-actions');
+    // #719: with gaps listed on the card, the empty line is about saved plan actions.
     assert.equal(card.querySelector('.picture-actions-empty').textContent.replace(/\s+/g, ' ').trim(),
-        'No actions yet. Start with your top three gaps.');
+        'No improvement-plan actions saved yet. Open the Improvement Plan to give a gap an owner and a date. Go to your top three gaps.');
+    assert.doesNotMatch(card.textContent, /No actions yet/);
     assert.equal(card.querySelector('h4').textContent, 'Start with these gaps');
     const link = card.querySelector('a'), heading = dom.root.querySelector('.picture-top-gaps').querySelector('h3');
     assert.equal(link.href, '#' + heading.id);
