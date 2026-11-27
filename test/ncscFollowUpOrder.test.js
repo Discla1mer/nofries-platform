@@ -59,3 +59,12 @@ test('the IT-provider summary leads with the on-screen top gaps on scoring v2 (#
     expect(order.slice(0, 2)).toEqual([control(pick('SU')), control(pick('PA'))]);
     expect(order.slice(2)).toEqual([control(pick('RM')), control(pick('PM'))]);
 });
+
+// #657: the dashboard shows the 90-day price; it must match /pricing.
+test('the 90-day price in the dashboard matches the pricing page', () => {
+    const fs = require('fs'), path = require('path');
+    expect(questionnaire.managedSecurityPrice).toBe('NZ$1,250 + GST');
+    expect(fs.readFileSync(path.join(__dirname, '../pricing.html'), 'utf8')).toContain(questionnaire.managedSecurityPrice + ' for 90 days');
+    expect(fs.readFileSync(path.join(__dirname, '../api/shared/protectedAssets/dashboardShell.js'), 'utf8'))
+        .toContain("'90-day managed security · " + questionnaire.managedSecurityPrice + "'");
+});

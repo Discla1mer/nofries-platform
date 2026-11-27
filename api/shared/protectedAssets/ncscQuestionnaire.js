@@ -566,13 +566,17 @@
         supplier: 'Use any gaps behind your questionnaire answers to choose an improvement. For example, review access to customer files and keep the updated access list as evidence for your next answer.',
         board: 'Choose a practical improvement from your top gaps. The written progress summary can show your board what changed and what still needs attention.'
     };
+    // #657: the standing offer and its price, as on /pricing. One place for the dashboard copy.
+    const MANAGED_SECURITY_PRICE = 'NZ$1,250 + GST';
+    const MANAGED_SECURITY_OFFER = 'No Fries can fix these with you: 90-day managed security, ' + MANAGED_SECURITY_PRICE + '.';
     function managedSecurityOffer(node, gated, win, stillCurrent, campaign) {
         const help = node('div', 'picture-next-steps-help'); help.hidden = true;
         const link = node('a', 'dashboard-button', 'Fix these with No Fries'); link.href = '/contact.html?service=managed_security_90';
         const pricing = node('a', '', 'See pricing and what’s included'); pricing.href = '/pricing#pricing-pilot';
         if (campaignOfferBridge[campaign]) help.append(node('p', '', campaignOfferBridge[campaign]));
-        help.append(node('p', 'picture-offer', 'Get help with your assessment gaps through 90-day managed security.'),
-            gated(() => { const actions = node('div', ''); actions.append(link, pricing); return actions; }),
+        // The links only open public pages, so they are not behind the details gate.
+        const actions = node('div', ''); actions.append(link, pricing);
+        help.append(node('p', 'picture-offer', MANAGED_SECURITY_OFFER), actions,
             node('p', 'dashboard-muted', 'Opens the contact form with this service named. The contact form does not include your answers.'));
         enquiryAvailable(win).then(available => { if (available && stillCurrent()) help.hidden = false; });
         return help;
@@ -1957,10 +1961,13 @@
             const gated = typeof options.detailsGate === 'function' ? options.detailsGate : content => content();
             // Keep the same gated anchor and keyboard focus while one shared probe settles.
             const availability = enquiryAvailable(win);
+            let offered = false;
             const resultHelp = (label, full = false) => {
                 const slot = node('div', full ? 'picture-next-steps-help' : 'ncsc-results-contact');
                 if (full && campaignOfferBridge[campaign]) slot.append(node('p', '', campaignOfferBridge[campaign]));
-                slot.append(gated(() => {
+                slot.append(node('p', 'picture-offer', MANAGED_SECURITY_OFFER));
+                // The link only opens the public contact page, so it is not behind the details gate.
+                slot.append((() => {
                     const link = node('a', 'dashboard-button');
                     function show(available) {
                         link.textContent = available ? 'Fix these with No Fries' : 'Email hello@nofries.nz';
@@ -1970,7 +1977,9 @@
                     show(false);
                     availability.then(available => { if (live()) show(available); });
                     return link;
-                }));
+                })());
+                const pricing = node('a', '', 'See pricing and what’s included'); pricing.href = '/pricing#pricing-pilot';
+                slot.append(pricing);
                 return slot;
             };
             function appendBoardSummary() {
@@ -2000,13 +2009,15 @@
                     node('li', '', 'Check payment and bank-detail changes using a known phone number or another trusted, separate route. Do not use contact details from the new request.'),
                     node('li', '', 'Record who confirmed the details and when. If you cannot confirm the change, do not pay yet.'));
                 section.append(paymentChecks);
-                panel.append(section, resultHelp('', true));
+                panel.append(section, resultHelp('', true)); offered = true;
             }
             const questionnaireFirst = campaign === 'insurance' || campaign === 'supplier';
             if (questionnaireFirst) renderQuestionnaireAnswers(panel);
             if (questionnaireFirst && campaign === 'insurance') appendBoardSummary();
             if (results) {
-                panel.append(rankedGapSection(node, results, metadata, 'ncsc-results-top-gaps', gap => [resultHelp(gap.title)]));
+                // #657: one offer block straight after the gaps, not a button on every gap.
+                panel.append(rankedGapSection(node, results, metadata, 'ncsc-results-top-gaps'));
+                if (!offered) { panel.append(resultHelp('', true)); offered = true; }
             }
             if (results && options.appendFrameworkComparison) options.appendFrameworkComparison(panel);
             renderNextSteps(panel, results ? topGaps(results, metadata) : undefined);
@@ -2081,7 +2092,7 @@
                     }); detail.append(item);
                 }); panel.append(detail);
             });
-            panel.append(campaign === 'scam' ? resultHelp('Results summary') : resultHelp('', true));
+            if (!offered) panel.append(resultHelp('', true));
         }
         // Show the reported (lower) figure first; the upper figure follows in a plain sentence.
         function leadWithLowerBound(card, valueSelector, model) {
@@ -2858,5 +2869,5 @@
         else openAssessment(initialAssessmentId);
         return controller;
     }
-    return Object.freeze({ mount: mount, topGaps, confirmNext, v2Shortfall, rankedGapSection, resultModel: resultModel, providerSummary: providerSummary, boardSummary: boardSummary, questionnaireAnswers: questionnaireAnswers, resultsCampaign: resultsCampaign, boardSummaryBlock: boardSummaryBlock, printOnly: printOnly, managedSecurityOffer: managedSecurityOffer, copySummary: copySummary, enoughAnswersToEstimate: enoughAnswersToEstimate });
+    return Object.freeze({ mount: mount, managedSecurityPrice: MANAGED_SECURITY_PRICE, topGaps, confirmNext, v2Shortfall, rankedGapSection, resultModel: resultModel, providerSummary: providerSummary, boardSummary: boardSummary, questionnaireAnswers: questionnaireAnswers, resultsCampaign: resultsCampaign, boardSummaryBlock: boardSummaryBlock, printOnly: printOnly, managedSecurityOffer: managedSecurityOffer, copySummary: copySummary, enoughAnswersToEstimate: enoughAnswersToEstimate });
 }));
