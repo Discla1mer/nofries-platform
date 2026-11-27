@@ -859,6 +859,12 @@
         let questionProgress, progressArc, functionSteps;
         let nextUnanswered;
         let nextUnresolved;
+        // The question bar's Next button and its parent; Review and submit
+        // joins them once every answer is in or on the last question (#725).
+        let navigationNext = null;
+        let navigationReview = null;
+        let navigationReviewSlot = null;
+        let navigationReady = null;
         let assistanceRequest = null;
         let assistanceGeneration = 0;
         let unloadAttached = false;
@@ -1030,6 +1036,29 @@
             }
             if (nextUnanswered) nextUnanswered.disabled = unansweredIndex(activeQuestion) === -1;
             if (nextUnresolved) nextUnresolved.disabled = unresolvedIndex(activeQuestion) === -1;
+            updateReviewInNavigation(!missing);
+        }
+        // Once every question is answered, or on the last question, the bar
+        // offers Review and submit as its main button instead of leaving a
+        // faint, disabled Next as the only way forward (#441 M5-02, #725).
+        function updateReviewInNavigation(allAnswered) {
+            if (!navigationNext || !navigationReviewSlot || !navigationReady) return;
+            const last = activeQuestion === questions.length - 1;
+            const offer = editable && acknowledged.status !== 'submitted' && (allAnswered || last);
+            if (offer && !navigationReview) {
+                navigationReview = button('Review and submit', openReview);
+                navigationReview.id = 'ncsc-navigation-review';
+                navigationReviewSlot.append(navigationReview);
+            } else if (!offer && navigationReview) {
+                navigationReview.remove(); navigationReview = null;
+            }
+            // On the last question Next has nowhere to go, so it leaves the bar;
+            // elsewhere it stays, as a secondary button once Review is offered.
+            navigationNext.hidden = last && !!navigationReview;
+            navigationNext.className = navigationReview ? 'dashboard-button dashboard-button-secondary' : 'dashboard-button';
+            const ready = allAnswered && !!navigationReview;
+            navigationReady.hidden = !ready;
+            navigationReady.textContent = ready ? 'All ' + questions.length + ' answered. Review and submit when ready.' : '';
         }
         // True while a save is running, or an automatic save is waiting for
         // the short pause and will be allowed to send this draft.
@@ -1161,7 +1190,7 @@
             const observationsOpen = !!(observations && observations.open && acknowledged &&
                 observations.dataset.assessmentId === acknowledged.assessmentId);
             const scrollX = win && win.scrollX, scrollY = win && win.scrollY;
-            questionProgress = null; progressArc = null; functionSteps = null; nextUnanswered = null; nextUnresolved = null; questionRegion = null;
+            questionProgress = null; progressArc = null; functionSteps = null; nextUnanswered = null; nextUnresolved = null; navigationNext = null; navigationReview = null; navigationReviewSlot = null; navigationReady = null; questionRegion = null;
             if (!acknowledged || acknowledged.status === 'submitted' || !editable) { reviewing = false; returnToReview = null; }
             // Keep the live region attached so asynchronous updates change an
             // existing accessible status rather than insert prefilled content.
@@ -1582,7 +1611,9 @@
                     const back = button('Return to review', resumeReview, 'dashboard-button dashboard-button-secondary'); back.id = 'ncsc-return-to-review';
                     controls.append(back);
                 }
-                controls.append(button('Review and submit', openReview, 'dashboard-text-button'));
+                // The main action below the question; Save is secondary while
+                // autosave is on, so this is the one primary button (#725).
+                controls.append(button('Review and submit', openReview, autosaveEnabled ? 'dashboard-button' : 'dashboard-button dashboard-button-secondary'));
             }
             content.append(controls);
             if (!sealed) renderDraftObservations(observationsOpen);
@@ -2194,7 +2225,14 @@
             const next = button('Next question', function () {
                 if (questionRegion.contains(next) && activeQuestion < questions.length - 1) { activeQuestion += 1; renderAssessmentQuestion(); }
             }); next.disabled = activeQuestion === questions.length - 1;
-            const navigationActions = node('div', 'ncsc-navigation-actions'); navigationActions.append(previous, next);
+            // Fixed slots, filled by updateReviewInNavigation, so nothing in the
+            // bar is moved (and focus is kept) when the last answer arrives.
+            const reviewSlot = node('span', 'ncsc-navigation-review-slot');
+            const ready = node('p', 'ncsc-navigation-ready'); ready.id = 'ncsc-navigation-ready'; ready.hidden = true;
+            ready.setAttribute('role', 'status');
+            const navigationActions = node('div', 'ncsc-navigation-actions'); navigationActions.append(previous, next, reviewSlot);
+            nav.append(ready);
+            navigationNext = next; navigationReview = null; navigationReviewSlot = reviewSlot; navigationReady = ready;
             // On narrow screens the bar sticks to the bottom of the screen with
             // Previous and Next; the two jump buttons sit behind More. Wider
             // screens show all four and no More button. DOM order is the tab order.
