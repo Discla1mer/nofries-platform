@@ -511,7 +511,7 @@
         if (!isV2(metadata)) return [];
         return rankedGaps(result, metadata).slice(V2_GAP_LIMIT).filter(gap => gap.responseOptionId === 'unknown');
     }
-    function rankedGapSection(node, result, metadata, headingId, controls, gaps = topGaps(result, metadata)) {
+    function rankedGapSection(node, result, metadata, headingId, controls, gaps = topGaps(result, metadata), help = GAP_HELP) {
         const v2 = isV2(metadata);
         const unconfirmed = v2 ? confirmNext(result, metadata) : [];
         const section = node('section', 'picture-top-gaps');
@@ -531,7 +531,7 @@
         section.append(node('p', 'dashboard-muted', v2
             ? 'Start with the first gap below. Gaps are ordered by how much each question counts and how far your answer is from fully in place. "I don\'t know" counts as a gap. This is a No Fries planning list from your answers, not an official NCSC priority.'
             : 'Start with the first gap below. Account sign-in checks, updates, backups and payment checks come first. The order is a guide based on your answers.'));
-        section.append(node('p', 'picture-gap-help', GAP_HELP));
+        section.append(node('p', 'picture-gap-help', help));
         const list = node('ol', 'picture-top-gaps-list');
         gaps.forEach(gap => {
             const item = node('li', 'picture-top-gap'); item.dataset.gapItem = gap.itemId;
@@ -571,6 +571,13 @@
     };
     // Owner direction (28 Nov 2026): point people to No Fries for fixing gaps.
     const GAP_HELP = 'No Fries can help you fix any of these.';
+    // #724: a consultant reads these pages on behalf of an organisation, so the
+    // copy does not address them as its owner. The loader sets the account type
+    // on <body>; it cannot yet tell a consultant's own workspace from a client's,
+    // so the wording fits both.
+    const CONSULTANT_GAP_HELP = 'You can plan these with this organisation in the Improvement Plan.';
+    const consultantViewer = doc => Boolean(doc && doc.body && doc.body.dataset && doc.body.dataset.dashboardAccountType === 'consultant');
+    const gapHelp = doc => consultantViewer(doc) ? CONSULTANT_GAP_HELP : GAP_HELP;
     // #657: the standing offer and its price, as on /pricing. One place for the dashboard copy.
     const MANAGED_SECURITY_PRICE = 'NZ$1,250 + GST';
     const MANAGED_SECURITY_OFFER = 'No Fries can fix these with you: 90-day managed security, ' + MANAGED_SECURITY_PRICE + '.';
@@ -2021,7 +2028,7 @@
             if (questionnaireFirst && campaign === 'insurance') appendBoardSummary();
             if (results) {
                 // #657: one offer block straight after the gaps, not a button on every gap.
-                panel.append(rankedGapSection(node, results, metadata, 'ncsc-results-top-gaps'));
+                panel.append(rankedGapSection(node, results, metadata, 'ncsc-results-top-gaps', undefined, undefined, gapHelp(doc)));
                 if (!offered) { panel.append(resultHelp('', true)); offered = true; }
             }
             if (results && options.appendFrameworkComparison) options.appendFrameworkComparison(panel);
@@ -2874,5 +2881,5 @@
         else openAssessment(initialAssessmentId);
         return controller;
     }
-    return Object.freeze({ mount: mount, managedSecurityPrice: MANAGED_SECURITY_PRICE, topGaps, confirmNext, v2Shortfall, rankedGapSection, resultModel: resultModel, providerSummary: providerSummary, boardSummary: boardSummary, questionnaireAnswers: questionnaireAnswers, resultsCampaign: resultsCampaign, boardSummaryBlock: boardSummaryBlock, printOnly: printOnly, managedSecurityOffer: managedSecurityOffer, copySummary: copySummary, enoughAnswersToEstimate: enoughAnswersToEstimate });
+    return Object.freeze({ mount: mount, consultantViewer, gapHelp, managedSecurityPrice: MANAGED_SECURITY_PRICE, topGaps, confirmNext, v2Shortfall, rankedGapSection, resultModel: resultModel, providerSummary: providerSummary, boardSummary: boardSummary, questionnaireAnswers: questionnaireAnswers, resultsCampaign: resultsCampaign, boardSummaryBlock: boardSummaryBlock, printOnly: printOnly, managedSecurityOffer: managedSecurityOffer, copySummary: copySummary, enoughAnswersToEstimate: enoughAnswersToEstimate });
 }));

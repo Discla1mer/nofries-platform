@@ -36,6 +36,8 @@ function setup(settings = {}) {
     const dom = createDom();
     const options = { metadata: fixtures.metadata, client, organisationId: seed.model.context.organisationId,
         displayName: 'Synthetic organisation A', ...settings.options };
+    // The loader records the signed-in account type on <body> (#724).
+    if (settings.accountType) dom.root.ownerDocument.body = { dataset: { dashboardAccountType: settings.accountType } };
     const controller = picture.mount(dom.root, options);
     return { ...dom, fixtures, seed, controller, options };
 }
@@ -403,6 +405,23 @@ test('an old saved-record action cannot open after a refresh or destruction', as
     dom.controller.destroy(); old.click();
     release({ assessments: [record], nextAfterAssessmentId: null }); await flush();
     assert.deepEqual(opened, []); assert.equal(dom.root.textContent, '');
+});
+
+test('#724: a consultant sees organisation wording, not owner wording, on first use and above the gaps', async () => {
+    let opened = 0; const empty = setup({ records: [], accountType: 'consultant', options: { openCyber: () => opened++ } }); await flush();
+    assert.match(empty.root.textContent, /Start this organisation's cyber check/);
+    assert.match(empty.root.textContent, /Answer questions about this organisation to see where it stands and what to fix first\./);
+    assert.doesNotMatch(empty.root.textContent, /your business|where you stand|Start your cyber check/);
+    click(empty, "Start this organisation's cyber check"); assert.equal(opened, 1);
+    empty.controller.destroy();
+    const withGaps = setup({ accountType: 'consultant' }); await flush();
+    assert.match(withGaps.root.querySelector('.picture-gap-help').textContent, /^You can plan these with this organisation in the Improvement Plan\.$/);
+    assert.doesNotMatch(withGaps.root.querySelector('.picture-top-gaps').textContent, /No Fries can help you fix any of these/);
+    withGaps.controller.destroy();
+    // A company account keeps the owner wording.
+    const company = setup({ accountType: 'company' }); await flush();
+    assert.equal(company.root.querySelector('.picture-gap-help').textContent, 'No Fries can help you fix any of these.');
+    company.controller.destroy();
 });
 
 test('empty organisation has an actionable baseline state and no invented zero score', async () => {

@@ -522,14 +522,19 @@
             }
             if (isEmpty) {
                 // A new organisation leads with one plain action, before any detail.
+                // #724: a consultant is not the organisation's owner, so the copy says "this organisation".
+                const forClient = questionnaire.consultantViewer(doc);
+                const startLabel = forClient ? 'Start this organisation\'s cyber check' : 'Start your cyber check';
                 const empty = node('section', 'picture-first-use');
                 const art = node('img', 'picture-illustration'); art.src = '/images/illustrations/overview-empty.webp'; art.alt = '';
                 empty.append(art, node('p', 'picture-first-use-eyebrow', 'Welcome to No Fries'),
-                    node('h2', '', 'Start your cyber check'),
-                    node('p', 'picture-first-use-intro', 'No saved assessments yet. Answer questions about your business to see where you stand and what to fix first.'));
+                    node('h2', '', startLabel),
+                    node('p', 'picture-first-use-intro', forClient
+                        ? 'No saved assessments yet. Answer questions about this organisation to see where it stands and what to fix first.'
+                        : 'No saved assessments yet. Answer questions about your business to see where you stand and what to fix first.'));
                 if (typeof options.openCyber === 'function') {
                     const token = epoch;
-                    const action = button('Start your cyber check', () => {
+                    const action = button(startLabel, () => {
                         if (live(token) && !loading && !message && !rows.length && !selected && after === null &&
                             action.parentElement === empty && empty.parentElement === root) options.openCyber(undefined, { startNew: true });
                     });
@@ -537,9 +542,9 @@
                 }
                 const steps = node('ol', 'picture-first-use-steps'); steps.setAttribute('role', 'list');
                 [
-                    ['Answer the questions', 'Tell us what is in place for the part of your business you choose.'],
-                    ['See your results', 'Submit your answers to see where you stand.'],
-                    ['Fix the gaps', 'Get your top three gaps and plan what to do next.']
+                    ['Answer the questions', forClient ? 'Tell us what is in place for the part of the organisation you choose.' : 'Tell us what is in place for the part of your business you choose.'],
+                    ['See your results', forClient ? 'Submit the answers to see where the organisation stands.' : 'Submit your answers to see where you stand.'],
+                    ['Fix the gaps', forClient ? 'See the top gaps and plan what to do next.' : 'Get your top gaps and plan what to do next.']
                 ].forEach((step, index) => {
                     const item = node('li', 'picture-first-use-step');
                     const number = node('span', 'picture-first-use-number', String(index + 1));
@@ -770,7 +775,7 @@
         }
         function gapSection(result) {
             const section = questionnaire.rankedGapSection(node, result, selectedMetadata(), id + '-top-gaps',
-                gap => planGap && improvementSelection() ? gapPlanControls(gap) : [], displayedGaps);
+                gap => planGap && improvementSelection() ? gapPlanControls(gap) : [], displayedGaps, questionnaire.gapHelp(doc));
             if (section.querySelector('ol')) section.append(helpPanel());
             return section;
         }
