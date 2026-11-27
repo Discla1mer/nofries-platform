@@ -3882,7 +3882,7 @@ describe('insurer and customer questionnaire answers', () => {
             const lines = [item.question, 'Suggested answer: ' + item.answer, item.basis, item.action];
             if (item.answer === 'Yes') expect(item.evidence).toBe('');
             else {
-                expect(item.evidence).toMatch(/^Evidence: [^\n]+\.$/);
+                expect(item.evidence).toMatch(/^What to gather: [^\n]+\.$/);
                 lines.push(item.evidence);
             }
             expect(blocks[index]).toBe(lines.join('\n'));
@@ -3974,12 +3974,13 @@ describe('insurer and customer questionnaire answers', () => {
 describe('campaign Results next steps', () => {
     const renderer = require('../api/shared/protectedAssets/ncscQuestionnaire');
     const cases = [
-        ['insurance', ['ncsc-questionnaire-answers', 'ncsc-board-next-step picture-summary', 'picture-top-gaps', 'ncsc-next-steps']],
-        ['supplier', ['ncsc-questionnaire-answers', 'picture-top-gaps', 'ncsc-next-steps', 'ncsc-board-next-step picture-summary']],
-        ['board', ['ncsc-board-next-step picture-summary', 'picture-top-gaps', 'ncsc-next-steps', 'ncsc-questionnaire-answers']],
+        // #657: one offer block, straight after the top gaps (after the payment step for scam).
+        ['insurance', ['ncsc-questionnaire-answers', 'ncsc-board-next-step picture-summary', 'picture-top-gaps', 'picture-next-steps-help', 'ncsc-next-steps']],
+        ['supplier', ['ncsc-questionnaire-answers', 'picture-top-gaps', 'picture-next-steps-help', 'ncsc-next-steps', 'ncsc-board-next-step picture-summary']],
+        ['board', ['ncsc-board-next-step picture-summary', 'picture-top-gaps', 'picture-next-steps-help', 'ncsc-next-steps', 'ncsc-questionnaire-answers']],
         ['scam', ['ncsc-payment-next-step', 'picture-next-steps-help', 'picture-top-gaps', 'ncsc-next-steps', 'ncsc-board-next-step picture-summary', 'ncsc-questionnaire-answers']],
-        ['', ['picture-top-gaps', 'ncsc-next-steps', 'ncsc-board-next-step picture-summary', 'ncsc-questionnaire-answers']],
-        ['unrecognised', ['picture-top-gaps', 'ncsc-next-steps', 'ncsc-board-next-step picture-summary', 'ncsc-questionnaire-answers']]
+        ['', ['picture-top-gaps', 'picture-next-steps-help', 'ncsc-next-steps', 'ncsc-board-next-step picture-summary', 'ncsc-questionnaire-answers']],
+        ['unrecognised', ['picture-top-gaps', 'picture-next-steps-help', 'ncsc-next-steps', 'ncsc-board-next-step picture-summary', 'ncsc-questionnaire-answers']]
     ];
     const campaignDom = campaign => {
         const dom = interactiveDom();
@@ -4009,7 +4010,9 @@ describe('campaign Results next steps', () => {
                 control(ui, 'Print board summary').click(); expect(dom.window.print).toHaveBeenCalledTimes(1);
             }
             await until(() => panel.querySelector('.picture-next-steps-help').querySelector('a')?.href === '/contact.html?service=managed_security_90');
-            expect(panel.children.at(-1).querySelector('a').href).toBe('/contact.html?service=managed_security_90');
+            const offers = panel.querySelectorAll('a').filter(link => link.textContent === 'Fix these with No Fries');
+            expect(offers).toHaveLength(1);
+            expect(panel.querySelector('.picture-next-steps-help').textContent).toContain('NZ$1,250 + GST');
             expect(panel.querySelector('.picture-next-steps-help').querySelector('a').href).toBe('/contact.html?service=managed_security_90');
             expect(dom.window.fetch).toHaveBeenCalledWith('/api/enquiry', expect.objectContaining({ method: 'GET' }));
             expect(dom.window.fetch).toHaveBeenCalledTimes(1);
@@ -4081,7 +4084,8 @@ describe('campaign Results next steps', () => {
             await until(() => control(ui, label));
             expect(control(ui, 'Copy answers')).toBeFalsy(); expect(control(ui, 'Print answers')).toBeFalsy();
             expect(control(ui, 'Copy board summary')).toBeFalsy(); expect(control(ui, 'Print board summary')).toBeFalsy();
-            expect(ui.root.querySelector('.picture-next-steps-help')?.querySelector('a')).toBeFalsy();
+            // #657: the offer link opens a public page, so it shows before details are saved.
+            expect(ui.root.querySelector('.picture-next-steps-help').querySelector('a')).toBeTruthy();
             status = 'ready'; ui.root.querySelectorAll('button').filter(b => b.textContent === label).forEach(b => b.click());
             await until(() => control(ui, 'Copy answers'));
             if (campaign === 'board' || campaign === 'insurance') expect(control(ui, 'Copy board summary')).toBeTruthy();
