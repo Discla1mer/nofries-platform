@@ -938,17 +938,16 @@
             const subscription = panel('Your plan: ' + planNames[model.subscription], 'Your dashboard subscription does not automatically include monitoring, support or advisory services.');
             subscription.classList.add('dashboard-subscription-panel'); main.append(subscription);
             // The standing offer links to its public pricing and terms.
-            const offer = panel('90-day managed security', 'Get help working through the gaps in your assessment.');
+            const offer = panel('90-day managed security · NZ$1,250 + GST', 'No Fries works through the gaps in your assessment with you.');
             offer.classList.add('dashboard-offer-panel');
             const offerLink = element('a', 'dashboard-button', 'Ask about 90-day managed security');
             offerLink.href = '/contact.html?service=managed_security_90';
             const pricingLink = element('a', '', 'See pricing and what’s included');
             pricingLink.href = '/pricing#pricing-pilot';
-            offer.append(gated(() => {
-                const actions = element('div');
-                actions.append(offerLink, pricingLink);
-                return actions;
-            }), element('p', 'dashboard-muted', 'Opens the contact form with this service named. Nothing is sent until you send the form.'));
+            // #657: both links only open public pages, so they are not behind the details gate.
+            const offerActions = element('div');
+            offerActions.append(offerLink, pricingLink);
+            offer.append(offerActions, element('p', 'dashboard-muted', 'Opens the contact form with this service named. Nothing is sent until you send the form.'));
             main.append(offer);
             const cards = element('div', 'dashboard-service-cards');
             model.services.forEach(function (service) {

@@ -1610,9 +1610,11 @@ describe('next step under the top gaps', () => {
         assert.equal(link.textContent, 'Fix these with No Fries');
         assert.equal(link.href, '/contact.html?service=managed_security_90');
         assert.match(help.textContent, /90-day managed security/);
-        assert.doesNotMatch(help.textContent, /\$\s*\d|opens the contact form/i);
+        // #657: the dashboard may show the price (owner decision, 28 Nov 2026).
+        assert.match(help.textContent, /NZ\$1,250 \+ GST/);
+        assert.doesNotMatch(help.textContent, /opens the contact form/i);
         const pricing = Array.from(help.querySelectorAll('a')).find(item => item.href === '/pricing#pricing-pilot');
-        assert.ok(pricing, 'Results link to the central offer instead of repeating its price');
+        assert.ok(pricing, 'the offer still links to the full pricing and inclusions');
         assert.doesNotMatch(panel.textContent, /Synthetic organisation A|46\.4%|assessment-mixed/);
         controller.destroy();
     });
