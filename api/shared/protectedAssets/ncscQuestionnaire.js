@@ -225,7 +225,11 @@
     // Plain-text summary of a submitted assessment for an IT provider. The
     // results view and the Overview share it, so both copy the same text.
     // Grouped by answer (No, Partial, Unknown, Not applicable), not by risk.
-    function providerSummary(assessment, metadata) {
+    // gaps (optional): the ranked top gaps shown on screen. Gaps listed there
+    // lead the summary in that order, so the IT-provider copy matches (#441).
+    function providerSummary(assessment, metadata, gaps) {
+        const ranked = new Map((Array.isArray(gaps) ? gaps : []).map(function (gap, index) { return [gap.itemId, index]; }));
+        const rank = function (id) { return ranked.has(id) ? ranked.get(id) : Infinity; };
         const labels = new Map(metadata.responseOptions.map(function (item) { return [item.id, item.label]; }));
         const optionOf = function (id) { const response = assessment.responses.find(function (item) { return item.itemId === id; }); return response ? response.optionId : null; };
         const items = [];
@@ -237,7 +241,7 @@
         const v2 = isV2(metadata);
         const gapQuestions = metadata.questions.map(function (question, position) { return { question: question, position: position, group: answerGroup(optionOf(question.id)) }; })
             .filter(function (entry) { return Object.hasOwn(GAP_RANK, entry.group); })
-            .sort(function (a, b) { return (v2 ? 0 : gapTier(a.question.id) - gapTier(b.question.id)) || GAP_RANK[a.group] - GAP_RANK[b.group] || a.position - b.position; });
+            .sort(function (a, b) { return (rank(a.question.id) - rank(b.question.id) || 0) || (v2 ? 0 : gapTier(a.question.id) - gapTier(b.question.id)) || GAP_RANK[a.group] - GAP_RANK[b.group] || a.position - b.position; });
         [['gap', gapQuestions], ['unknown'], ['not_applicable']].forEach(function (pass) {
             const entries = pass[1] || metadata.questions.filter(function (question) { return answerGroup(optionOf(question.id)) === pass[0]; })
                 .map(function (question) { return { question: question, group: pass[0] }; });
@@ -1881,7 +1885,7 @@
                 panel.append(rankedGapSection(node, results, metadata, 'ncsc-results-top-gaps', gap => [resultHelp(gap.title)]));
             }
             if (results && options.appendFrameworkComparison) options.appendFrameworkComparison(panel);
-            renderNextSteps(panel);
+            renderNextSteps(panel, results ? topGaps(results, metadata) : undefined);
             // The board or insurer summary is on Results for every visit, not only
             // when a board or insurance campaign tag survived sign-up (#441 G04).
             if (results && campaign !== 'board' && campaign !== 'insurance') appendBoardSummary();
@@ -1916,7 +1920,7 @@
             if (typeof options.openImprovement === 'function' && planSource) {
                 const follow = node('section', 'ncsc-plan-followup');
                 follow.append(node('h3', '', 'Follow up on this assessment'));
-                const preview = node('details'), steps = providerSummary(acknowledged, metadata).items;
+                const preview = node('details'), steps = providerSummary(acknowledged, metadata, results ? topGaps(results, metadata) : undefined).items;
                 preview.append(node('summary', '', 'Assessment follow-ups (' + steps.length + ')'));
                 const list = node('ol');
                 steps.forEach(step => {
@@ -1963,7 +1967,7 @@
             const upTo = node('p', 'ncsc-result-upper', 'Up to ' + model.upperDisplay + ' if every answer still to confirm turns out to be in place.');
             const children = Array.from(card.children); children.splice(children.indexOf(value) + 1, 0, upTo); card.replaceChildren.apply(card, children);
         }
-        function renderNextSteps(panel) {
+        function renderNextSteps(panel, gaps) {
             const section = node('section', 'ncsc-next-steps'); section.append(node('h3', '', 'Suggested follow-ups'));
             const countOf = function (ids) { return questions.filter(function (question) { return ids.includes(answerGroup(savedAnswer(question.id).optionId)); }).length; };
             const toFix = countOf(['no', 'partial']), toCheck = countOf(['unknown', 'not_applicable']);
@@ -1971,12 +1975,12 @@
             // One plain verdict before any percentages. The list follows answer groups, not risk.
             if (toFix || toCheck) section.append(node('p', 'ncsc-verdict', 'You have ' + plural(toFix, 'gap', 'gaps') + ' to fix and ' + plural(toCheck, 'answer', 'answers') + ' to check.'));
             if (toCheck) section.append(node('p', 'dashboard-muted', 'No IT provider? Ask whoever looks after your computers and accounts, or a local IT support business, to check these with you.'));
-            const list = node('ol'), summary = providerSummary(acknowledged, metadata);
+            const list = node('ol'), summary = providerSummary(acknowledged, metadata, gaps);
             summary.items.forEach(function (entry) {
                 const item = node('li'); item.append(node('strong', '', entry.title), node('p', 'dashboard-muted', entry.owner), node('p', '', entry.action)); list.append(item);
             });
             const followUpCount = list.children.length;
-            if (followUpCount) section.append(node('p', '', 'Suggested follow-ups: ' + followUpCount + (isV2(metadata) ? '. Grouped by your answer (No, then Partial, then Unknown, then Not applicable). Your top gaps above show the priority order.' : '. Gaps come first, in the same order as your top gaps, then answers to check.')));
+            if (followUpCount) section.append(node('p', '', 'Suggested follow-ups: ' + followUpCount + '. Your top gaps come first, in the same order, then other gaps and answers to check.'));
             if (followUpCount > 3) Array.prototype.forEach.call(list.children, function (item, index) { if (index >= 3) item.hidden = true; });
             section.append(list);
             if (followUpCount > 3) {
