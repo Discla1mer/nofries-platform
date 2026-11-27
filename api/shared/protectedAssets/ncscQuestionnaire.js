@@ -395,7 +395,7 @@
                 : v2 ? 'Your saved answer: ' + metadata.responseOptions.find(item => item.id === saved).label + '.'
                 : 'Based on your saved ' + (option === 'partial' ? 'Partial' : answer) + ' answer; check the exact coverage before using it.';
             return { id: id, question: question, answer: answer, basis: basis, action: 'To answer Yes: ' + action,
-                evidence: answer === 'Yes' ? '' : 'Evidence: ' + evidence };
+                evidence: answer === 'Yes' ? '' : 'What to gather: ' + evidence };
         });
         const scope = 'Scope: ' + assessment.scopePopulation.description;
         // v2 copies the answers only; "To answer Yes" and evidence stay on screen (#702).

@@ -3882,7 +3882,7 @@ describe('insurer and customer questionnaire answers', () => {
             const lines = [item.question, 'Suggested answer: ' + item.answer, item.basis, item.action];
             if (item.answer === 'Yes') expect(item.evidence).toBe('');
             else {
-                expect(item.evidence).toMatch(/^Evidence: [^\n]+\.$/);
+                expect(item.evidence).toMatch(/^What to gather: [^\n]+\.$/);
                 lines.push(item.evidence);
             }
             expect(blocks[index]).toBe(lines.join('\n'));
