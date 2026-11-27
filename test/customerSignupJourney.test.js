@@ -205,7 +205,11 @@ test('renders the exact organisation schedule before combined consent', async ()
     const f = setup(scheduled); await f.view.ready;
     expect(f.root.textContent).toContain('Organisation schedule');
     expect(f.root.textContent).toContain(scheduled.scheduleText);
-    expect(f.root.textContent).toContain('I accept this organisation schedule and agreement.');
+    expect(f.root.textContent).toContain('I have authority to accept this organisation schedule and agreement for this organisation, and I accept them.');
+    // #735: summary, then both full texts, then the accept box and button.
+    const text = f.root.textContent, at = part => { const index = text.indexOf(part); expect(index).toBeGreaterThan(-1); return index; };
+    const order = ['Organisation schedule: read the full text', 'Dashboard agreement: read the full text', 'I have authority to accept', 'Accept and continue'].map(at);
+    expect(order).toEqual(order.slice().sort((a, b) => a - b));
     const box = f.root.querySelector('input'); box.checked = true;
     for (const fn of box.events.change) fn();
     f.root.querySelector('button').click(); await flush();
@@ -237,7 +241,7 @@ test('summarises the schedule offer lines at a glance before the full schedule',
     f.view.dispose();
 });
 
-test('keeps the summary and accept control at the top, with the full texts in printable expanders', async () => {
+test('#735: shows the summary and the full texts in printable expanders before the accept control', async () => {
     // Round 2: the accept control sat after about 10,000 px (26,000 px on a phone) of legal text.
     const scheduled = { ...TERMS, scheduleId: 'schedule-v1', scheduleText: 'Price: NZ$0.\nSynthetic schedule body.', scheduleDigest: 'b'.repeat(64) };
     const f = setup(scheduled); await f.view.ready;
@@ -248,7 +252,7 @@ test('keeps the summary and accept control at the top, with the full texts in pr
         'Dashboard agreement: read the full text']);
     expect(details[0].textContent).toContain(scheduled.scheduleText); expect(details[1].textContent).toContain(scheduled.termsText);
     expect(order(glance)).toBeLessThan(order(consent)); expect(order(consent)).toBeLessThan(order(accept));
-    expect(order(accept)).toBeLessThan(order(details[0]));
+    expect(order(glance)).toBeLessThan(order(details[0])); expect(order(details[1])).toBeLessThan(order(consent));
     expect(details.every(node => !node.open)).toBe(true);
     f.window.dispatch('beforeprint');
     expect(details.every(node => node.open === true)).toBe(true);
