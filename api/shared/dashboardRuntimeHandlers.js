@@ -34,6 +34,7 @@ const CONTACT_CAPABILITIES = 'work-queue-v1 account-label-v1 contact-request-v1'
 const DETAILS_CAPABILITIES = CONTACT_CAPABILITIES + ' starter-details-v1';
 const QUESTIONNAIRE_CAPABILITIES = DETAILS_CAPABILITIES + ' questionnaire-details-v1';
 const { RepresentativeDetailsError, normaliseRepresentativeDetails } = require('./customerSignup/deferredRepresentativeDetails');
+const { OrganisationProfileError, normaliseOrganisationProfile } = require('./organisationProfile/organisationProfileService');
 
 const CONFIG = ['browserAuthOptions', 'identityPolicy', 'proofStore', 'clock', 'readExternalRuntimeEpoch',
     'newRequestId', 'requestBudgetMs', 'pool', 'instanceId', 'historyBudget', 'newId', 'newGenerationToken', 'newOperationId'];
@@ -48,6 +49,9 @@ const HEADER_NAMES = ['cookie', 'origin', 'sec-fetch-site', 'x-nofries-dashboard
 const CURRENT_CAPABILITIES = QUESTIONNAIRE_CAPABILITIES + ' account-identity-v1';
 // Display negotiation only: the status route performs its own authorisation.
 const PAID_STATUS_CAPABILITIES = CURRENT_CAPABILITIES + ' paid-status-v1';
+// A dashboard that can show the organisation profile (#608) says so; older
+// dashboards keep their exact session shape.
+const PROFILE_CAPABILITIES = PAID_STATUS_CAPABILITIES + ' organisation-profile-v1';
 const QUEUE_CAPABILITY = 'work-queue-v1';
 const LABEL_CAPABILITY = 'work-queue-v1 account-label-v1';
 const IDENTITY_CAPABILITY = CONTACT_CAPABILITIES + ' account-identity-v1';
@@ -134,6 +138,11 @@ function failure(error, category) {
             representative_details_not_required: 409, representative_details_locked: 409, representative_details_result_required: 409,
             representative_details_required: 409, representative_details_unavailable: 503 };
         if (known[error.code] === error.statusCode) { status = error.statusCode; code = error.code; }
+    } else if (error instanceof OrganisationProfileError) {
+        const known = { organisation_profile_invalid: 400, organisation_profile_access_denied: 403,
+            organisation_profile_conflict: 409, organisation_profile_unavailable: 503 };
+        code = 'organisation_profile_unavailable';
+        if (own(known, error.code) && known[error.code] === error.statusCode) { status = error.statusCode; code = error.code; }
     } else if (error instanceof ContactRequestError) {
         const known = { contact_request_input_invalid: 400, contact_request_access_denied: 403,
             contact_request_operation_conflict: 409, contact_request_unavailable: 503 };
@@ -172,7 +181,7 @@ function createDashboardRuntimeHandlers(configuration) {
     const ambiguousErrors = new WeakSet(), ambiguousResponses = new WeakSet();
     let supplied, authOptions, options, clock, budget, browser, operator, runtime, logout, resources, ncscQuota = null, customerBrowser = null, customerSession = null, customerLogout = null, activationBinding = null;
     let paidFrameworksEnabled = false;
-    let representativeDetailsEnabled = false, questionnaireExportGateEnabled = false;
+    let representativeDetailsEnabled = false, questionnaireExportGateEnabled = false, organisationProfileEnabled = false;
     let activationPort = null, adminSubjects = new Set(), customerIdentityProvider, improvementEnabled = false, contactRequestsEnabled = false, contactRequestEmail = null;
     let externalBrowser = null, externalSession = null, externalLogout = null, externalBinding = null, externalAuth = null;
 
@@ -248,7 +257,7 @@ function createDashboardRuntimeHandlers(configuration) {
     }
     try {
         const configurationKeys = dataKeys(configuration);
-        fields(configuration, [...CONFIG, ...['ncsc', 'paidFrameworksEnabled', 'improvementEnabled', 'contactRequestsEnabled', 'representativeDetailsEnabled', 'questionnaireExportGateEnabled', 'contactRequestEmail', 'customer', 'externalCustomer', 'activation'].filter(key => configurationKeys.includes(key))]);
+        fields(configuration, [...CONFIG, ...['ncsc', 'paidFrameworksEnabled', 'improvementEnabled', 'contactRequestsEnabled', 'representativeDetailsEnabled', 'questionnaireExportGateEnabled', 'organisationProfileEnabled', 'contactRequestEmail', 'customer', 'externalCustomer', 'activation'].filter(key => configurationKeys.includes(key))]);
         if (configurationKeys.includes('paidFrameworksEnabled')) {
             if (configuration.paidFrameworksEnabled !== true) throw unavailable();
             paidFrameworksEnabled = true;
@@ -260,6 +269,11 @@ function createDashboardRuntimeHandlers(configuration) {
         if (configurationKeys.includes('representativeDetailsEnabled')) {
             if (configuration.representativeDetailsEnabled !== true) throw unavailable();
             representativeDetailsEnabled = true;
+        }
+        // Organisation profile (#608): exactly true enables the route and session flag.
+        if (configurationKeys.includes('organisationProfileEnabled')) {
+            if (configuration.organisationProfileEnabled !== true) throw unavailable();
+            organisationProfileEnabled = true;
         }
         if (configurationKeys.includes('questionnaireExportGateEnabled')) {
             if (configuration.questionnaireExportGateEnabled !== true || !representativeDetailsEnabled) throw unavailable();
@@ -424,7 +438,8 @@ function createDashboardRuntimeHandlers(configuration) {
             ...(ncscQuota ? { ncscEnabled: true } : {}), ...(improvementEnabled ? { improvementEnabled: true } : {}),
             ...(paidFrameworksEnabled ? { paidFrameworksEnabled: true } : {}),
             ...(contactRequestsEnabled ? { contactRequestsEnabled: true } : {}),
-            ...(representativeDetailsEnabled ? { representativeDetailsEnabled: true } : {}) });
+            ...(representativeDetailsEnabled ? { representativeDetailsEnabled: true } : {}),
+            ...(organisationProfileEnabled ? { organisationProfileEnabled: true } : {}) });
     } catch (_) { throw unavailable(); }
 
     function selectedCustomer(cookie) {
@@ -507,6 +522,8 @@ function createDashboardRuntimeHandlers(configuration) {
         const paidStatusRoute = paidFrameworksEnabled && route === 'organisations/paid-framework-status';
         let paidCursor = null, paidStatus = null;
         const details = representativeDetailsEnabled && route === 'representative-details';
+        // Default off: without the flag this path stays an unknown route (404), before any body is read.
+        const profile = organisationProfileEnabled && route === 'organisation-profile';
         let resource = null, ncscRoute = null, improvementRoute = null;
         if (improvementEnabled && ['improvement/plans', 'improvement/list', 'improvement/view', 'improvement/editor', 'improvement/execute'].includes(route)) {
             improvementRoute = route.slice('improvement/'.length);
@@ -524,11 +541,11 @@ function createDashboardRuntimeHandlers(configuration) {
             }
         }
         const methods = { ...(firstPaint ? { overview: ['GET'] } : {}), session: ['GET', 'POST'], organisations: ['GET'], selection: ['POST'], logout: ['POST'], evidence: ['GET'] };
-        if (!workQueue && !contact && !details && !paid && !paidStatusRoute && ncscRoute === null && improvementRoute === null && !own(methods, route)) {
+        if (!workQueue && !contact && !details && !profile && !paid && !paidStatusRoute && ncscRoute === null && improvementRoute === null && !own(methods, route)) {
             try { resource = hostResourceForRoute(route); } catch (_) { fail(404, 'dashboard_not_found'); }
         }
-        entry.category = paid || paidStatusRoute ? 'frameworks' : improvementRoute !== null ? 'improvement' : ncscRoute === null ? route : 'ncsc';
-        const allow = paid ? (paid.mutation ? ['POST'] : paid.assessmentId ? ['GET'] : ['GET', 'POST']) : details ? ['GET', 'POST'] : workQueue || paidStatusRoute ? ['GET'] : contact ? ['POST'] : improvementRoute !== null ? improvementRoute === 'execute' ? ['POST'] : ['GET']
+        entry.category = profile ? 'organisation-profile' : paid || paidStatusRoute ? 'frameworks' : improvementRoute !== null ? 'improvement' : ncscRoute === null ? route : 'ncsc';
+        const allow = paid ? (paid.mutation ? ['POST'] : paid.assessmentId ? ['GET'] : ['GET', 'POST']) : details || profile ? ['GET', 'POST'] : workQueue || paidStatusRoute ? ['GET'] : contact ? ['POST'] : improvementRoute !== null ? improvementRoute === 'execute' ? ['POST'] : ['GET']
             : ncscRoute !== null ? (ncscRoute === '' ? ['GET', 'POST'] : ncscRoute.includes('/') ? ['POST'] : ['GET']) : resource ? ['GET'] : methods[route];
         if (!allow.includes(snapshot.method)) fail(405, 'dashboard_method_not_allowed', { Allow: allow.join(', ') });
         const directory = { limit: 50, afterBindingId: null };
@@ -644,7 +661,7 @@ function createDashboardRuntimeHandlers(configuration) {
         } else if (['app.js', 'dashboard.css'].includes(route) && query !== null) {
             if (!/^v=[A-Za-z0-9_-]{43}$/.test(query)) bad();
         } else if (!firstPaint && query !== null) bad();
-        return freeze({ route, paid, paidCursor, paidStatus, contact, details, resource, overviewActions: firstPaint && query === 'view=first-paint&actions=1', assetVersion: ['app.js', 'dashboard.css'].includes(route) && query ? query.slice(2) : null, directory, evidenceSelector, ncscRoute, ncscQuery, improvementRoute, improvementSelector, workQueueSelector });
+        return freeze({ route, paid, paidCursor, paidStatus, contact, details, profile, resource, overviewActions: firstPaint && query === 'view=first-paint&actions=1', assetVersion: ['app.js', 'dashboard.css'].includes(route) && query ? query.slice(2) : null, directory, evidenceSelector, ncscRoute, ncscQuery, improvementRoute, improvementSelector, workQueueSelector });
     }
     async function readWire(original, entry, snapshot) {
         entry.phase = 'wire';
@@ -703,6 +720,7 @@ function createDashboardRuntimeHandlers(configuration) {
             else if (route === 'selection') { fields(input, ['bindingId', 'expectedGeneration', 'operationId']); uuid(input.bindingId); digest(input.expectedGeneration); uuid(input.operationId); }
             else if (route === 'logout') fields(input, []);
             else if (route === 'representative-details') return normaliseRepresentativeDetails(input);
+            else if (route === 'organisation-profile') return normaliseOrganisationProfile(input);
             else if (route === 'contact-requests') return normaliseContactRequest(input);
             return freeze(copy(input, MAX_WIRE));
         } catch (_) { bad(); }
@@ -796,7 +814,7 @@ function createDashboardRuntimeHandlers(configuration) {
                 next: result.phase === 'prepared' ? 'customer_terms' : 'owner_finalisation' });
         }
         let expectedGeneration = null;
-        if (selected.route === 'overview' || selected.paid || selected.paidStatus || selected.contact || selected.details || selected.workQueueSelector || selected.improvementRoute !== null || selected.ncscRoute !== null || selected.evidenceSelector || selected.resource && selected.resource.requiresGeneration) {
+        if (selected.route === 'overview' || selected.paid || selected.paidStatus || selected.contact || selected.details || selected.profile || selected.workQueueSelector || selected.improvementRoute !== null || selected.ncscRoute !== null || selected.evidenceSelector || selected.resource && selected.resource.requiresGeneration) {
             const generations = snapshot.headers['x-nofries-dashboard-generation'];
             try { if (generations.length !== 1) throw new Error(); expectedGeneration = digest(generations[0]); }
             catch (_) { fail(403, 'dashboard_access_denied'); }
@@ -917,6 +935,26 @@ function createDashboardRuntimeHandlers(configuration) {
                 return bound.representativeDetails(command, account?.ownDeferredAgreement ? account.scope : null);
             }));
         }
+        if (selected.profile) {
+            // Customer sessions only: staff do not edit an organisation's own profile here.
+            if (!isCustomer(privateRequest.headers.cookie)) fail(403, 'dashboard_access_denied');
+            const result = await bounded(async () => {
+                let bound;
+                try { bound = await resources.forRequest(privateRequest, { expectedGeneration }); }
+                catch (error) {
+                    const denied = error instanceof DashboardPersistenceError && error.code === 'dashboard_access_denied' && error.statusCode === 403;
+                    throw new OrganisationProfileError(denied ? 'organisation_profile_access_denied' : 'organisation_profile_unavailable', denied ? 403 : 503);
+                }
+                return bound.organisationProfile(command);
+            });
+            // A stale save: the transaction finished its final checks, so the
+            // current profile may be shown for the person to review.
+            if (result && result.conflict) {
+                logFailure(entry.category, 409, 'organisation_profile_conflict');
+                return response(409, { code: 'organisation_profile_conflict', profile: result.conflict });
+            }
+            return response(200, result);
+        }
         if (selected.contact) {
             // Customer sessions only: a staff operator cannot ask on a customer's behalf.
             if (!isCustomer(privateRequest.headers.cookie)) fail(403, 'dashboard_access_denied');
@@ -1001,7 +1039,8 @@ function createDashboardRuntimeHandlers(configuration) {
             const admin = activationPort && value.purpose === 'operator_dashboard' ? await bounded(() => captureRequest(privateRequest)) : null;
             const activationAvailable = admin && adminSubjects.has(admin.identityPayload.identityTenantId + ':' + admin.identityPayload.oid);
             const offered = snapshot.headers['x-nofries-dashboard-capabilities'].length === 1 ? snapshot.headers['x-nofries-dashboard-capabilities'][0] : null;
-            const capabilities = offered === PAID_STATUS_CAPABILITIES ? CURRENT_CAPABILITIES : offered;
+            const paidStatusOffered = offered === PAID_STATUS_CAPABILITIES || offered === PROFILE_CAPABILITIES;
+            const capabilities = paidStatusOffered ? CURRENT_CAPABILITIES : offered;
             return response(200, { schemaVersion: 1, authenticated: true, purpose: value.purpose, expiresAt: value.expiresAt,
                 generation: value.generation, selectedBindingId: value.selectedBindingId,
                 ...(customerAccount?.accountType ? { accountType: customerAccount.accountType } : {}),
@@ -1020,7 +1059,9 @@ function createDashboardRuntimeHandlers(configuration) {
                 ...([QUESTIONNAIRE_CAPABILITIES, CURRENT_CAPABILITIES].includes(capabilities) && questionnaireExportGateEnabled && customerAccount?.ownDeferredAgreement &&
                     customerAccount.bindingId === value.selectedBindingId ? { questionnaireExportGateAvailable: true } : {}),
                 ...([CONTACT_CAPABILITIES, IDENTITY_CAPABILITY, DETAILS_CAPABILITIES, QUESTIONNAIRE_CAPABILITIES, CURRENT_CAPABILITIES].includes(capabilities) && contactRequestsEnabled && customerAccount ? { contactRequestsAvailable: true } : {}),
-                ...(offered === PAID_STATUS_CAPABILITIES && paidFrameworksEnabled && customerAccount?.accountType === 'consultant' ? { paidFrameworkStatusAvailable: true } : {}),
+                // Display only (#608): the route re-checks membership and, to save, organisation.manage.
+                ...(offered === PROFILE_CAPABILITIES && organisationProfileEnabled && customerAccount ? { organisationProfileAvailable: true } : {}),
+                ...(paidStatusOffered && paidFrameworksEnabled && customerAccount?.accountType === 'consultant' ? { paidFrameworkStatusAvailable: true } : {}),
                 ...(customerAccount?.clientSetupAvailable ? { clientSetupAvailable: true } : {}), ...(activationAvailable ? { activationAvailable: true } : {}) });
         }
         if (selected.route === 'session') {

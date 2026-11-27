@@ -28,7 +28,9 @@ const PERMISSIONS = freeze({
     'contact.request': ['overview'],
     'representative.record': ['overview'],
     'membership.manage': ['overview'],
-    'advisor.manage': ['overview']
+    'advisor.manage': ['overview'],
+    // Change the organisation's own profile (#608). Admins only.
+    'organisation.manage': ['overview']
 });
 const VIEWER = ['overview.read', 'services.read', 'report.read_issued', 'contact.request'];
 const EDITOR = [...VIEWER, 'assessment.read', 'assessment.write', 'improvement.read',
