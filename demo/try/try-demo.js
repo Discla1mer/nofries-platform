@@ -1,13 +1,13 @@
 (function (root, factory) {
     'use strict';
-    // The demo engine is the real questionnaire metadata and ENG-003 scoring.
+    // The demo engine is the real 16-question questionnaire (scoring v2, #399) and its evaluator.
     // Node loads it directly; the page bundles the same files (document.js).
     if (typeof module === 'object' && module.exports) {
         module.exports = factory(function () {
             const crypto = require('node:crypto');
-            return { evaluator: require('../../api/shared/assessmentEngine/ncscAssessmentEvaluator'),
-                core: require('../../api/shared/assessmentEngine/assessmentEvaluator'),
-                metadata: require('../../api/shared/ncscQuestionnaireMetadata').createNcscQuestionnaireMetadata(),
+            return { evaluator: require('../../api/shared/assessmentEngine/ncscProfileSet'),
+                core: require('../../api/shared/assessmentEngine/assessmentEvaluatorV2'),
+                metadata: require('../../api/shared/ncscQuestionnaireMetadata').createNcscQuestionnaireMetadataV2(),
                 sha256: function (text) { return crypto.createHash('sha256').update(text, 'utf8').digest('hex'); } };
         });
     } else root.NoFriesTryDemo = factory(function () { return root.NoFriesTryEngine(); });
@@ -25,9 +25,11 @@
     const EARLIER_ID = 'brightwater-july-2026';
     const EARLIER_AT = '2026-07-14T21:00:00.000Z';
     const EARLIER_SCOPE = 'Brightwater Joinery (fictional): 9 staff, the workshop and office laptops, Microsoft 365 email and files, and the online accounting and job-booking services.';
-    // The fictional business's earlier answers, keyed by the real question-ID stem.
-    const EARLIER_ANSWERS = Object.freeze({ RM: 'no', SA: 'partial', AI: 'no', SC: 'unknown', PA: 'partial', MF: 'partial', DU: 'no',
-        LP: 'partial', DR: 'yes', RP: 'no', PM: 'no', SV: 'yes', AC: 'unknown', NS: 'no' });
+    // The fictional business's earlier answers, keyed by the real question-ID stem
+    // (plus Q2 for the two areas with a second question).
+    const EARLIER_ANSWERS = Object.freeze({ RM: 'no', SA: 'partly', AI: 'no', PA: 'partly', MF: 'partly', MFQ2: 'mfa_text_code', DU: 'no',
+        LP: 'partly', DR: 'yes', DRQ2: 'ad_hoc', RP: 'no', PM: 'no', SV: 'yes', NS: 'no', SU: 'unknown', EM: 'unknown' });
+    function earlierKey(itemId) { const part = itemId.split('-'); return part[3] + (part[5] === 'Q1' ? '' : part[5]); }
     const MAX_LOG = 400;
     let engine = null;
     function getEngine() { if (!engine) engine = loadEngine(); return engine; }
@@ -85,7 +87,7 @@
                     if (answer.rationale) atom.applicabilityClaim = { rationaleSha256: sha256(answer.rationale.text) };
                     return atom;
                 }) };
-            return JSON.parse(parts.core.serialiseAssessmentEvaluation(parts.evaluator.evaluateAcceptedNcscAssessment(input)));
+            return JSON.parse(parts.core.serialiseAssessmentEvaluation(parts.evaluator.NCSC_V2_CONTEXT.evaluate(input)));
         }
         function problem(status, code) { return { status: status, body: { code: code } }; }
         function execute(command, at) {
@@ -153,7 +155,7 @@
         }
         function seed() {
             const responses = metadata.questions.map(function (question) {
-                return { itemId: question.id, optionId: EARLIER_ANSWERS[question.id.split('-')[3]], rationale: null };
+                return { itemId: question.id, optionId: EARLIER_ANSWERS[earlierKey(question.id)], rationale: null };
             });
             [{ action: 'create', expectedRevision: null, payload: { scopePopulation: { description: EARLIER_SCOPE } } },
                 { action: 'save', expectedRevision: 0, payload: { responses: responses } },
