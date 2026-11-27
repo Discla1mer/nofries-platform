@@ -14,6 +14,10 @@
   },
   "routes": [
     { "route": "/offer", "rewrite": "/offer.html" },
+    { "route": "/scams", "redirect": "/invoice-scams", "statusCode": 301 },
+    { "route": "/scam", "redirect": "/invoice-scams", "statusCode": 301 },
+    { "route": "/scams.html", "redirect": "/invoice-scams", "statusCode": 301 },
+    { "route": "/scam.html", "redirect": "/invoice-scams", "statusCode": 301 },
     { "route": "/pricing", "rewrite": "/pricing.html" },
     { "route": "/api/pricing/paid", "methods": ["GET"], "allowedRoles": ["anonymous"], "headers": { "Cache-Control": "no-store" } },
     {

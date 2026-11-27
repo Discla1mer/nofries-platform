@@ -1075,6 +1075,13 @@ app.get([
 });
 
 app.get('/index.html', (_req, res) => res.redirect(308, '/'));
+// Short and guessed addresses for the invoice-scam page (#697). The campaign
+// query string is kept; the destination path is fixed, so nothing in the
+// request can steer the redirect elsewhere.
+app.get(['/scams', '/scam', '/scams.html', '/scam.html'], (req, res) => {
+    const query = req.originalUrl.indexOf('?');
+    res.redirect(301, '/invoice-scams' + (query < 0 ? '' : req.originalUrl.slice(query)));
+});
 app.get('/', (req, res) => {
     res.setHeader('Cache-Control', 'private, no-store, max-age=0');
     const selected = signupSelection(req, res); if (!selected) return;
@@ -1224,6 +1231,7 @@ function mountPublicAssets(application) {
     rootRoutes.push(['/', 'index.html']);
     rootRoutes.push(['/pricing', 'pricing.html']);
     rootRoutes.push(['/offer', 'offer.html']);
+    rootRoutes.push(['/invoice-scams', 'invoice-scams.html']);
     rootRoutes.forEach(([route, fileName]) => {
         application.get(route, (req, res) => {
             if (fileName.endsWith('.html')) {
