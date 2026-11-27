@@ -409,8 +409,32 @@ test('board commitments distinguish two questions on one control and a ranked un
     for (const callback of board.events.toggle) callback();
     await until(() => board.querySelector('.picture-board-actions').querySelectorAll('li').length === 3);
     const paper = board.querySelector('.picture-board-print').textContent;
-    backup.forEach((q, i) => expect(paper).toContain(q.prompt + ' — Synthetic owner ' + (i + 1)));
+    // #696: each question on a two-question control has its own title, so the commitment uses it.
+    ['Data Recovery: backups', 'Data Recovery: restore tests'].forEach((title, i) => expect(paper).toContain(title + ' — Synthetic owner ' + (i + 1)));
+    expect(paper).toContain('Multi-factor Authentication: coverage — Synthetic owner 0');
     expect(paper).toContain('Synthetic owner 0');
     expect(readBoardPlan.mock.calls[0][0].outputSha256).toBe(assessment.submission.evaluation.outputSha256);
     controller.destroy();
+});
+
+test('two questions on one control never share a title in the board summary or the top gaps (#696)', async () => {
+    const metadata = V2(), ids = metadata.questions.map(question => question.id);
+    const at = suffix => ids.findIndex(id => id.endsWith(suffix));
+    const answers = metadata.questions.map(question => question.responseOptionIds[0]);
+    // Backups partly in place, restore tests not; MFA required everywhere but by text code.
+    answers[at('DR-01-Q1')] = 'partly'; answers[at('DR-01-Q2')] = 'no'; answers[at('MF-01-Q2')] = 'mfa_text_code';
+    const { h, assessment } = await submittedV2(answers);
+    const result = questionnaire.resultModel(assessment, metadata, h.organisationId);
+    const gaps = questionnaire.topGaps(result, metadata, 5), titles = gaps.map(gap => gap.title);
+    expect(new Set(titles).size).toBe(titles.length);
+    expect(titles).toEqual(expect.arrayContaining(['Data Recovery: backups', 'Data Recovery: restore tests', 'Multi-factor Authentication: method']));
+    const board = questionnaire.boardSummary(assessment, metadata, gaps).text;
+    const grouped = board.slice(board.indexOf('\nIn place:')).split('\n').filter(line => line.startsWith('- '));
+    expect(new Set(grouped).size).toBe(grouped.length);
+    expect(board).toMatch(/In place:[\s\S]*- Multi-factor Authentication: coverage\n/);
+    expect(board).toMatch(/Partly in place:[\s\S]*- Data Recovery: backups\n/);
+    expect(board).toMatch(/Not in place yet:[\s\S]*- Data Recovery: restore tests/);
+    expect(board).not.toMatch(/- (?:Data Recovery|Multi-factor Authentication)\n/);
+    // A control with one question keeps its plain title.
+    expect(board).toMatch(/- Patching\n/);
 });
