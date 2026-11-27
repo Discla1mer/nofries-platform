@@ -1470,13 +1470,14 @@ body[data-page="public-error"] .public-shell { min-height: 0; }
 .email-settings-list > li { border-top: 1px solid var(--line-strong); padding-block: 16px; }
 .organisation-card .email-settings-list h2 { margin: 0 0 6px; font-size: 1.15rem; }
 
-/* Phones: the header keeps the brand (unless the homepage hero is shown) and Log in. The other page links
-   live in the footer, laid out as a tidy two-column list with large targets. */
+/* Phones: the brand sits on its own row (unless the homepage hero is shown) and the page links wrap on
+   the row below it with Log in at the end, each a 44px target (#670). The footer repeats them as a
+   two-column list with large targets. */
 @media (max-width: 700px) {
-    body .site-header:has(> nav[aria-label="Main navigation"]) { grid-template-columns: minmax(0, 1fr) auto; align-items: center; row-gap: 0; }
-    body .site-header nav[aria-label="Main navigation"] { grid-column: auto; grid-row: auto; justify-self: end; justify-content: flex-end; }
-    body .site-header nav[aria-label="Main navigation"] > a:not(.site-login, .homepage-login) { display: none; }
-    body .site-header nav[aria-label="Main navigation"] > :is(.site-login, .homepage-login) { margin-left: 0; white-space: nowrap; }
+    body .site-header:has(> nav[aria-label="Main navigation"]) { grid-template-columns: minmax(0, 1fr); align-items: center; row-gap: 2px; }
+    body .site-header nav[aria-label="Main navigation"] { display: flex; flex-wrap: wrap; grid-column: 1 / -1; grid-row: auto; justify-self: stretch; justify-content: flex-start; gap: 0 18px; }
+    body .site-header nav[aria-label="Main navigation"] > a { display: inline-flex; align-items: center; min-height: 44px; }
+    body .site-header nav[aria-label="Main navigation"] > :is(.site-login, .homepage-login) { margin-left: auto; white-space: nowrap; }
     body[data-page="dashboard-home"]:has(#gatewayPublic:not([hidden])) .site-header > .brand { display: none; }
     body[data-page="dashboard-home"]:has(#gatewayPublic:not([hidden])) .site-header nav[aria-label="Main navigation"] { grid-column: 2; }
 
