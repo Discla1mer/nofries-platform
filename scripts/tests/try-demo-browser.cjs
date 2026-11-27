@@ -13,7 +13,8 @@ const { STORAGE_KEY } = require('../../demo/try/try-demo');
 
 const shots = process.env.NOFRIES_TRY_DEMO_SCREENSHOTS || fs.mkdtempSync(path.join(os.tmpdir(), 'nf-try-demo-'));
 fs.mkdirSync(shots, { recursive: true });
-const ANSWERS = ['yes', 'partial', 'no', 'unknown', 'yes', 'yes', 'partial', 'yes', 'yes', 'partial', 'yes', 'yes', 'no', 'yes'];
+// One answer per question of the 16-question check (scoring v2); the sixth is the sign-in method question.
+const ANSWERS = ['yes', 'partly', 'no', 'unknown', 'yes', 'mfa_authenticator', 'partly', 'yes', 'yes', 'ad_hoc', 'partly', 'yes', 'yes', 'no', 'yes', 'yes'];
 async function tabTo(page, predicate, limit = 60) {
     for (let index = 0; index < limit; index++) { await page.keyboard.press('Tab'); if (await page.evaluate(predicate)) return; }
     throw new Error('Keyboard focus did not reach the expected control');
@@ -86,7 +87,7 @@ async function run(browser, origin, name, viewport) {
     assert.match(await page.locator('.try-demo-banner').innerText(), /fictional business/);
     assert.equal(await page.getByRole('link', { name: 'Create your account' }).getAttribute('href'), '/login?intent=create');
     assert.equal(await page.locator('h1').innerText(), 'Overview');
-    await main(page).getByText('28.6% in place', { exact: true }).first().waitFor();
+    await main(page).getByText('38.2% in place', { exact: true }).first().waitFor();
     assert.equal(await page.getByRole('link', { name: 'Fix these with No Fries' }).getAttribute('href'), '/contact.html?service=managed_security_90');
     assert.ok(await fits(page), name + ': no horizontal scroll');
     await checkPalette(page);
@@ -99,7 +100,7 @@ async function run(browser, origin, name, viewport) {
     await press(page.getByRole('button', { name: 'Start an assessment', exact: true }));
     await page.locator('#ncsc-scope').fill('Brightwater Joinery (fictional): all 9 staff, workshop and office laptops, Microsoft 365.');
     await press(page.getByRole('button', { name: 'Create assessment', exact: true }));
-    await main(page).getByText('0 of 14 answered').waitFor();
+    await main(page).getByText('0 of 16 answered').waitFor();
     const steps = page.locator('.ncsc-function-step');
     assert.equal(await steps.count(), 5);
     for (const index of [1, 0]) {
@@ -113,7 +114,7 @@ async function run(browser, origin, name, viewport) {
         if (index < ANSWERS.length - 1) await press(page.getByRole('button', { name: 'Next question', exact: true }));
     }
     await press(page.getByRole('button', { name: 'Save progress', exact: true }));
-    await main(page).getByText('14 of 14 answered · Complete', { exact: true }).waitFor();
+    await main(page).getByText('16 of 16 answered · Complete', { exact: true }).waitFor();
     await page.locator('#ncsc-save-status').filter({ hasText: /Your progress is saved/ }).waitFor();
     await press(page.getByRole('button', { name: 'Review and submit', exact: true }));
     await page.getByRole('heading', { name: 'Review your answers before submitting' }).waitFor();
@@ -121,7 +122,7 @@ async function run(browser, origin, name, viewport) {
     await press(page.getByRole('button', { name: 'Submit', exact: true }));
     await page.getByRole('heading', { name: 'Assessment results' }).waitFor();
     const results = await main(page).innerText();
-    assert.match(results, /Reported implementation\s+67\.9% in place\s+Up to 75\.0%/, 'real scoring, lower bound first');
+    assert.match(results, /Reported implementation\s+70\.5% in place\s+Up to 76\.9%/, 'real scoring, lower bound first');
     assert.match(results, /Suggested follow-ups/);
     await press(page.getByText('Summary to share with your IT provider'));
     for (const label of ['Copy summary', 'Print these results']) assert.equal(await main(page).getByRole('button', { name: label }).first().isVisible(), true, label);
@@ -132,7 +133,7 @@ async function run(browser, origin, name, viewport) {
     await (touch ? page.locator('.dashboard-mobile-nav a', { hasText: 'Overview' }).tap() : page.locator('.dashboard-rail a', { hasText: 'Overview' }).click());
     await press(page.getByRole('button', { name: 'Compare with previous assessment', exact: true }));
     await page.getByText(/Compared with the previous assessment/).waitFor();
-    assert.match(await main(page).innerText(), /Overall\s+28\.6%–42\.9%\s+67\.9%–75\.0%/, 'saved answers survive reload and compare');
+    assert.match(await main(page).innerText(), /Overall\s+38\.2%–51\.1%\s+70\.5%–76\.9%/, 'saved answers survive reload and compare');
     await shot(page, name + '-4-compare.png');
 
     const reset = page.getByRole('button', { name: 'Reset demo', exact: true });
@@ -140,7 +141,7 @@ async function run(browser, origin, name, viewport) {
     assert.match(await page.locator('#try-demo-status').innerText(), /Demo reset/);
     assert.equal(await page.locator('h1').innerText(), 'Overview');
     assert.deepEqual(await page.evaluate(key => [localStorage.getItem(key), localStorage.getItem('nofries.unrelated')], STORAGE_KEY), [null, 'kept']);
-    await main(page).getByText('28.6% in place', { exact: true }).first().waitFor();
+    await main(page).getByText('38.2% in place', { exact: true }).first().waitFor();
     assert.equal(await page.getByRole('button', { name: 'Compare with previous assessment', exact: true }).count(), 0, 'reset removed the visitor assessment');
     assert.deepEqual(await context.cookies(), []);
     assert.deepEqual(unexpected, [], name + ': no network, console, CSP or script errors');
@@ -156,7 +157,7 @@ async function run(browser, origin, name, viewport) {
         await run(browser, origin, 'desktop', { width: 1280, height: 860 });
         await run(browser, origin, 'mobile', { width: 390, height: 844 });
         await run(browser, origin, 'narrow', { width: 320, height: 844 });
-        console.log('Try demo browser check passed (1280px, 390px and 320px: 14 questions, review, submit, results, compare, reset). Screenshots: ' + shots);
+        console.log('Try demo browser check passed (1280px, 390px and 320px: 16 questions, review, submit, results, compare, reset). Screenshots: ' + shots);
     } finally {
         await browser.close();
         server.close();
