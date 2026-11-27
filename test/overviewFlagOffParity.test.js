@@ -39,9 +39,12 @@ const { renderV1Parity } = require('./fixtures/overviewParity');
 // M1-13 board summary: the four result-bearing DOM digests change because the
 // copyable board summary now opens with "What needs attention first" (the
 // on-screen top gaps). Models, requests and actions are unchanged.
+// M6-01 (#731) updates only the compared dataset's DOM digest: Compare now shows
+// one comparability message (no separate "same questions and weights" footnote)
+// and lists the answers that changed. Models, requests and actions are unchanged.
 const EXPECTED_V1 = {
     "mixed single result": {"dom": "a06aa3e8357f76d222794a4e72fb0c2c698414652c2b99b498aaa21b3598098c", "models": "1090aaaa9a72e144276c87fbf806f98258434689b118da98fff5587466657317", "requests": "0bc62d8a75163b4c0cbd9eae4bf23d3fb1075fc46f1296b9ca669d132522ccbe", "actions": "382ab69c2c7db231fb94b554071fa910bb4e87756ba47d29547221a5d5dc3118"},
-    "three results and a draft, compared": {"dom": "f3741fb0ec4c3f3deb9ec0dd4eca96ed5556353d4841556640b357980d7684cf", "models": "4b41f9a9893a8523e0efd203626b5b51a21332e766a8385320879abf5237386b", "requests": "d43f4f731927071e22113944f77fab7815125a9a95eeeca12ae1dd079aad1a3b", "actions": "382ab69c2c7db231fb94b554071fa910bb4e87756ba47d29547221a5d5dc3118"},
+    "three results and a draft, compared": {"dom": "29885cffc6fd394910f37e090583e3cc249aae5262be8c28a22c27b91d9a593d", "models": "4b41f9a9893a8523e0efd203626b5b51a21332e766a8385320879abf5237386b", "requests": "d43f4f731927071e22113944f77fab7815125a9a95eeeca12ae1dd079aad1a3b", "actions": "382ab69c2c7db231fb94b554071fa910bb4e87756ba47d29547221a5d5dc3118"},
     "draft only": {"dom": "19dd2dc08b683324e28380d0a1177718b211998f359c59bfa7e1a5bcb3cc2bc1", "models": "2772bcc0d42c03eee0cc71978e76ca33cba06678d81d480bce411aae65809881", "requests": "0bc62d8a75163b4c0cbd9eae4bf23d3fb1075fc46f1296b9ca669d132522ccbe", "actions": "382ab69c2c7db231fb94b554071fa910bb4e87756ba47d29547221a5d5dc3118"},
     "empty organisation": {"dom": "aa85043d776c6e1f88fc1d969dd33babd1d0ba6865f68ca471ba0d7e51fc7b5d", "models": "3780390742e7759777266b571cc73e3936831d9932af25d137babd5ca79c5934", "requests": "9d958ad5c85eeed7346a66959c79d22e6c4551a3b2f3a623487e26109fa09d0c", "actions": "382ab69c2c7db231fb94b554071fa910bb4e87756ba47d29547221a5d5dc3118"},
     "mostly unknown, with actions and plan links": {"dom": "f2fd998c994a6cf51899734153edbdd7960c85928bda22c3ffaa161c1db072d5", "models": "78c602dbc29aad06bbf3e00ca09ea209489ef405838263f7f72d1d8a12b64daf", "requests": "0bc62d8a75163b4c0cbd9eae4bf23d3fb1075fc46f1296b9ca669d132522ccbe", "actions": "382ab69c2c7db231fb94b554071fa910bb4e87756ba47d29547221a5d5dc3118"},
