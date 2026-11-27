@@ -1154,6 +1154,33 @@ describe('questionnaire draft progress and unanswered navigation', () => {
         } finally { gate.resolve(); ui.controller.destroy(); }
     });
 
+    test('review names each skipped question with a jump to it (#669)', async () => {
+        const h = await backend(), ui = await createInUi(h), questions = metadata().questions;
+        try {
+            questions.forEach((question, index) => { if (index !== 6) choose(ui, index, 'yes'); });
+            control(ui, 'Review and submit').click();
+            const jumps = byId(ui, 'ncsc-review-jumps');
+            expect(jumps.querySelectorAll('button')).toHaveLength(1);
+            const jump = jumps.querySelector('button');
+            expect(jump.textContent).toMatch(/^Question 7: /);
+            jump.click();
+            expect(ui.root.querySelector('.ncsc-review')).toBeNull();
+            expect(byId(ui, `ncsc-answer-${questions[6].id}-yes`)).toBeTruthy();
+        } finally { ui.controller.destroy(); }
+    });
+
+    test('creating an assessment does not say "Saving your answers" (#699)', async () => {
+        const h = await backend(), gate = deferred(); let held = true;
+        const client = { ...h.client, save: async (command, settings) => { if (held) await gate.promise; return h.client.save(command, settings); } };
+        const ui = mountUi(h, { client }); await until(() => control(ui, 'Start an assessment'));
+        try {
+            control(ui, 'Start an assessment').click(); enter(byId(ui, 'ncsc-scope'), 'Synthetic declared cloud scope.');
+            control(ui, 'Create assessment').click();
+            await until(() => ui.root.textContent.includes('Setting up your assessment.'));
+            expect(ui.root.textContent).not.toContain('Saving your answers');
+        } finally { held = false; gate.resolve(); ui.controller.destroy(); }
+    });
+
     test('answers tapped while an autosave is in flight are all saved (#699 M4-04)', async () => {
         const h = await backend(), gate = deferred(); let held = true;
         const client = { ...h.client, save: async (command, settings) => { if (held) await gate.promise; return h.client.save(command, settings); } };
