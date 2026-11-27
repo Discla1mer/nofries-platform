@@ -68,7 +68,7 @@ const PERMISSION_MODULES = {
     'report.read_issued': ['board_reports'], 'report.read_draft': ['board_reports'],
     'report.draft': ['board_reports'], 'report.approve': ['board_reports'],
     'services.read': ['services'], 'contact.request': ['overview'],
-    'membership.manage': ['overview'], 'advisor.manage': ['overview']
+    'membership.manage': ['overview'], 'advisor.manage': ['overview'], 'organisation.manage': ['overview']
 };
 const VIEWER = ['overview.read', 'services.read', 'report.read_issued', 'contact.request'];
 const EDITOR = [...VIEWER, 'assessment.read', 'assessment.write', 'improvement.read',
@@ -205,7 +205,7 @@ test('advisor evidence review is explicit and cannot grant decision or report ap
     const state = membership(['fractional_advisor']);
     const review = assignment({ modules: ['evidence'], permissions: ['evidence.review'] });
     assert.equal(resolve(state, { permission: 'evidence.review', module: 'evidence' }, review).assignmentId, review.assignmentId);
-    for (const permission of ['decision.approve', 'report.approve', 'membership.manage', 'advisor.manage', 'contact.request']) {
+    for (const permission of ['decision.approve', 'report.approve', 'membership.manage', 'advisor.manage', 'organisation.manage', 'contact.request']) {
         const grant = assignment({ permissions: [permission], modules: PERMISSION_MODULES[permission] });
         denies(() => normaliseAdvisorAssignment(grant));
         denies(() => resolve(state, { permission, module: PERMISSION_MODULES[permission][0] }, grant));
