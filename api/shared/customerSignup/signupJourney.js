@@ -234,7 +234,7 @@ function mountSignupJourney(root, client, { customerTransport, signInRecovery, s
             label.className = 'organisation-authority-check';
             authority.type = 'checkbox'; authority.required = true; authority.name = 'authorityConfirmed';
             authority.checked = false;
-            label.append(authority, element('span', ' I am authorised to set up this organisation and to accept its terms on its behalf.')); form.append(label);
+            label.append(authority, element('span', ' I am authorised to set up this account for this organisation.')); form.append(label);
             const submit = element('button', 'Continue'); submit.type = 'submit'; submit.className = 'button'; form.append(submit);
             const revision = viewRevision;
             form.addEventListener('submit', event => {
@@ -294,8 +294,8 @@ function mountSignupJourney(root, client, { customerTransport, signInRecovery, s
             heading.textContent = 'Review your terms';
             root.append(element('p', 'Your email has been verified. Review the applicable organisation schedule and agreement before continuing.'));
             const scheduled = Object.hasOwn(state, 'scheduleId');
-            // Summary and the accept control sit together at the top. The full
-            // texts follow in expanders; their wording is unchanged and hashed.
+            // #735: the summary and the full texts come first, then the accept
+            // control. The legal wording in the expanders is unchanged and hashed.
             const glance = scheduled ? scheduleSummary(state.scheduleText) : null;
             if (glance) root.append(glance);
             const label = element('label'), consent = element('input');
@@ -303,7 +303,8 @@ function mountSignupJourney(root, client, { customerTransport, signInRecovery, s
             consent.type = 'checkbox';
             consent.checked = false;
             label.append(consent, element('span', scheduled
-                ? ' I accept this organisation schedule and agreement.' : ' I accept these terms.'));
+                ? ' I have authority to accept this organisation schedule and agreement for this organisation, and I accept them.'
+                : ' I have authority to accept these terms for this organisation, and I accept them.'));
             const hint = element('p'); hint.className = 'signup-field-error signup-consent-hint'; hint.hidden = true;
             hint.setAttribute('role', 'alert');
             // Keep the button reachable by keyboard. Without the tick it explains
@@ -322,8 +323,7 @@ function mountSignupJourney(root, client, { customerTransport, signInRecovery, s
                     accepted: true }, { signal }), undefined, false, SAVING_ACCEPTANCE);
             });
             consent.addEventListener('change', () => { if (consent.checked) hint.hidden = true; });
-            root.append(label, submit, hint,
-                element('p', 'You can read the full ' + (scheduled ? 'schedule and agreement' : 'terms') + ' below before you accept.'));
+            root.append(element('p', 'Read the full ' + (scheduled ? 'schedule and agreement' : 'terms') + ' here before you accept. The accept box is underneath.'));
             const expander = (title, text, className, ariaLabel) => {
                 const details = element('details'), summary = element('summary', title), body = element('p', text);
                 body.className = 'signup-legal-text';
@@ -346,7 +346,7 @@ function mountSignupJourney(root, client, { customerTransport, signInRecovery, s
                 root.append(link); link.click(); link.remove();
                 view.setTimeout(() => view.URL.revokeObjectURL(url), 1000);
             });
-            root.append(saveCopy);
+            root.append(label, submit, hint, saveCopy);
         } else if (state.status === 'resume_acceptance') {
             heading.textContent = 'Complete account setup';
             root.append(element('p', 'Your acceptance was recorded, but account setup did not finish. Resume the protected setup without accepting again.'),

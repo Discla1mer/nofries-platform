@@ -377,7 +377,11 @@
             current = target;
             if (doc && current && current.label) doc.title = current.label + ' · No Fries Dashboard';
             status.hidden = !!requested || !route;
-            status.textContent = requested || !route ? '' : 'We couldn\'t find that page, so we\'ve taken you to ' + target.label + '.';
+            // #685: Evidence exists but is not switched on for this account, so say that
+            // instead of the generic not-found line. Other routes keep the generic line.
+            status.textContent = requested || !route ? ''
+                : route === 'evidence' || route === '#evidence' ? 'Evidence storage isn\'t available on this account yet, so we\'ve taken you to ' + target.label + '.'
+                : 'We couldn\'t find that page, so we\'ve taken you to ' + target.label + '.';
             if (changeLocation && !repeatedRoute) pushEntry(current.route);
             if (historyTarget) cyberLocation = historyTarget.location || null;
             else if (committedEntry || current.key !== 'cyber_security') cyberLocation = null;
@@ -502,8 +506,13 @@
             const requests = element('a', '', 'Request a data export or deletion');
             requests.href = '/privacy.html#requests';
             privacy.append(requests);
+            // #734 (D): say how long a sign-in lasts. The server ends a session 4 hours
+            // after sign-in (SESSION_ABSOLUTE_TTL_MS) and has no idle timeout.
+            const security = panel('Security');
+            security.append(element('p', '', 'You stay signed in for up to 4 hours, even if you\'re not using the dashboard. Sign out when you leave a shared computer.'),
+                element('p', 'dashboard-muted', 'Sign out from the Account menu ends the session in this browser.'));
             const organisation = panel('Organisation profile', model.context.displayName);
-            main.append(account, notifications, privacy, organisation);
+            main.append(account, security, notifications, privacy, organisation);
             if (options.organisationProfile && typeof options.organisationProfile.read === 'function') renderOrganisationProfile(organisation, options.organisationProfile);
         }
         // #608: the organisation's website, industry, region and size. The
@@ -938,17 +947,16 @@
             const subscription = panel('Your plan: ' + planNames[model.subscription], 'Your dashboard subscription does not automatically include monitoring, support or advisory services.');
             subscription.classList.add('dashboard-subscription-panel'); main.append(subscription);
             // The standing offer links to its public pricing and terms.
-            const offer = panel('90-day managed security', 'Get help working through the gaps in your assessment.');
+            const offer = panel('90-day managed security · NZ$1,250 + GST', 'No Fries works through the gaps in your assessment with you.');
             offer.classList.add('dashboard-offer-panel');
             const offerLink = element('a', 'dashboard-button', 'Ask about 90-day managed security');
             offerLink.href = '/contact.html?service=managed_security_90';
             const pricingLink = element('a', '', 'See pricing and what’s included');
             pricingLink.href = '/pricing#pricing-pilot';
-            offer.append(gated(() => {
-                const actions = element('div');
-                actions.append(offerLink, pricingLink);
-                return actions;
-            }), element('p', 'dashboard-muted', 'Opens the contact form with this service named. Nothing is sent until you send the form.'));
+            // #657: both links only open public pages, so they are not behind the details gate.
+            const offerActions = element('div');
+            offerActions.append(offerLink, pricingLink);
+            offer.append(offerActions, element('p', 'dashboard-muted', 'Opens the contact form with this service named. Nothing is sent until you send the form.'));
             main.append(offer);
             const cards = element('div', 'dashboard-service-cards');
             model.services.forEach(function (service) {

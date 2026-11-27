@@ -81,3 +81,12 @@ test('follow-ups and the copied summary never send the customer to their IT prov
     const shown = fs.readFileSync(path.join(__dirname, '../api/shared/protectedAssets/ncscQuestionnaire.js'), 'utf8');
     expect(shown.match(/No Fries can help you fix any of these\./g)).toHaveLength(1);
 });
+
+// #657: the dashboard shows the 90-day price; it must match /pricing.
+test('the 90-day price in the dashboard matches the pricing page', () => {
+    const fs = require('fs'), path = require('path');
+    expect(questionnaire.managedSecurityPrice).toBe('NZ$1,250 + GST');
+    expect(fs.readFileSync(path.join(__dirname, '../pricing.html'), 'utf8')).toContain(questionnaire.managedSecurityPrice + ' for 90 days');
+    expect(fs.readFileSync(path.join(__dirname, '../api/shared/protectedAssets/dashboardShell.js'), 'utf8'))
+        .toContain("'90-day managed security · " + questionnaire.managedSecurityPrice + "'");
+});
