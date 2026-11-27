@@ -1138,6 +1138,14 @@ test('a single submitted assessment explains that there is nothing to compare ye
     const section = trendSection(dom);
     assert.equal(section.querySelector('h3').textContent, 'Change over time');
     assert.match(section.textContent, /This is the only submitted assessment so far\. Another submitted assessment is needed/);
+    // #719: the single-result state says what a second assessment is for.
+    assert.match(section.textContent, /A second assessment shows whether the gaps you worked on have closed\./);
+    assert.equal(section.querySelectorAll('button').length, 0);
+    const opened = [];
+    const linked = setup({ client: trendClient([only, draft]).client, options: { initialAssessmentId: only.assessmentId, openCyber: (...args) => opened.push(args) } }); await flush();
+    const again = trendSection(linked).querySelectorAll('button').find(item => item.textContent === 'Start a new assessment');
+    again.click(); assert.deepEqual(opened, [[undefined, { startNew: true }]]);
+    linked.controller.destroy();
     assert.equal(section.querySelectorAll('button').length, 0);
     assert.equal(section.querySelector('table'), null);
     assert.deepEqual(reads, [only.assessmentId]);
@@ -1797,8 +1805,10 @@ test('Actions card stays hidden until there is a submitted result', async () => 
 test('Actions card empty state links to the top three gaps panel', async () => {
     const dom = actionsCard({ value: { more: false, lists: [] } }); await flush();
     const card = dom.root.querySelector('.picture-actions');
+    // #719: with gaps listed on the card, the empty line is about saved plan actions.
     assert.equal(card.querySelector('.picture-actions-empty').textContent.replace(/\s+/g, ' ').trim(),
-        'No actions yet. Start with your top three gaps.');
+        'No improvement-plan actions saved yet. Open the Improvement Plan to give a gap an owner and a date. Go to your top three gaps.');
+    assert.doesNotMatch(card.textContent, /No actions yet/);
     assert.equal(card.querySelector('h4').textContent, 'Start with these gaps');
     const link = card.querySelector('a'), heading = dom.root.querySelector('.picture-top-gaps').querySelector('h3');
     assert.equal(link.href, '#' + heading.id);

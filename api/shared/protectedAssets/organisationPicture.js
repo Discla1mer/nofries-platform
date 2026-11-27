@@ -377,8 +377,14 @@
                 } else card.append(node('p', '', gaps.querySelector('p').textContent));
             } else card.append(node('p', '', 'A first gap is only available for a submitted assessment with results.'));
             if (!actions.total) {
-                const empty = node('p', 'picture-actions-empty', 'No actions yet. ');
-                const start = detail && v2Profile(selectedMetadata()) ? 'Start with your top gaps.' : 'Start with your top three gaps.';
+                // #719: gaps listed just above are things to do, so "No actions yet" read as a
+                // contradiction. Say what is missing (a saved plan action) and how to add one.
+                const listed = Boolean(gaps && detail && displayedGaps.length);
+                const empty = node('p', 'picture-actions-empty', listed
+                    ? 'No improvement-plan actions saved yet. ' + (planGap && improvementSelection() ? 'Use Plan this on a gap' : 'Open the Improvement Plan') +
+                        ' to give a gap an owner and a date. ' : 'No actions yet. ');
+                const start = listed ? (v2Profile(selectedMetadata()) ? 'Go to your top gaps.' : 'Go to your top three gaps.')
+                    : detail && v2Profile(selectedMetadata()) ? 'Start with your top gaps.' : 'Start with your top three gaps.';
                 if (gaps) {
                     const link = node('a', '', start); link.href = '#' + id + '-top-gaps';
                     link.addEventListener('click', event => {
@@ -684,6 +690,12 @@
             if (trend.total === 1) {
                 section.append(node('p', '', trend.otherProfiles ? 'This is the only submitted assessment with this set of questions so far. Another submitted assessment with the same questions is needed to compare saved results and answer coverage.'
                     : 'This is the only submitted assessment so far. Another submitted assessment is needed to compare saved results and answer coverage.'));
+                // #719: say what a second assessment is for and how to start one.
+                section.append(node('p', 'dashboard-muted', 'A second assessment shows whether the gaps you worked on have closed. Most small businesses repeat the check every six to twelve months, or after a big change such as a new IT provider.'));
+                if (typeof options.openCyber === 'function') {
+                    const token = epoch, again = button('Start a new assessment', () => { if (live(token)) options.openCyber(undefined, { startNew: true }); });
+                    again.classList.add('dashboard-button-secondary'); section.append(again);
+                }
                 if (after !== null) section.append(node('p', 'dashboard-muted', 'Other saved assessments may not be loaded yet. Load more to include them.'));
                 return heading;
             }
