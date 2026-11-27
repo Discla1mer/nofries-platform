@@ -477,6 +477,7 @@
             ...(Object.prototype.hasOwnProperty.call(value || {}, 'representativeDetailsAvailable') ? ['representativeDetailsAvailable'] : []),
             ...(Object.prototype.hasOwnProperty.call(value || {}, 'questionnaireExportGateAvailable') ? ['questionnaireExportGateAvailable'] : []),
             ...(Object.prototype.hasOwnProperty.call(value || {}, 'contactRequestsAvailable') ? ['contactRequestsAvailable'] : []),
+            ...(Object.prototype.hasOwnProperty.call(value || {}, 'organisationProfileAvailable') ? ['organisationProfileAvailable'] : []),
             ...(Object.prototype.hasOwnProperty.call(value || {}, 'accountType') ? ['accountType'] : [])]) ||
             Object.prototype.hasOwnProperty.call(value, 'accountLabel') && (value.purpose !== 'customer' || typeof value.accountLabel !== 'string' || !value.accountLabel.trim() || value.accountLabel.length > 254 || /[\u0000-\u001f\u007f-\u009f]/u.test(value.accountLabel)) ||
             Object.prototype.hasOwnProperty.call(value, 'accountName') && (value.purpose !== 'customer' || typeof value.accountName !== 'string' || value.accountName !== value.accountName.trim() || !value.accountName || value.accountName.length > 160 || /[\u0000-\u001f\u007f-\u009f\p{Cf}]/u.test(value.accountName)) ||
@@ -489,6 +490,7 @@
             Object.prototype.hasOwnProperty.call(value, 'representativeDetailsAvailable') && (value.representativeDetailsAvailable !== true || value.purpose !== 'customer') ||
             Object.prototype.hasOwnProperty.call(value, 'questionnaireExportGateAvailable') && (value.questionnaireExportGateAvailable !== true || value.representativeDetailsAvailable !== true) ||
             Object.prototype.hasOwnProperty.call(value, 'contactRequestsAvailable') && (value.contactRequestsAvailable !== true || value.purpose !== 'customer') ||
+            Object.prototype.hasOwnProperty.call(value, 'organisationProfileAvailable') && (value.organisationProfileAvailable !== true || value.purpose !== 'customer') ||
             !canonicalDate(value.expiresAt) || typeof value.generation !== 'string' || !DIGEST.test(value.generation) ||
             value.selectedBindingId !== null && (typeof value.selectedBindingId !== 'string' || !UUID.test(value.selectedBindingId))) throw invalid();
         if (Date.parse(value.expiresAt) <= Date.now()) { const error = invalid(); error.expired = true; throw error; }
@@ -500,12 +502,13 @@
             ...(value.representativeDetailsAvailable === true ? { representativeDetailsAvailable: true } : {}),
             ...(value.questionnaireExportGateAvailable === true ? { questionnaireExportGateAvailable: true } : {}),
             ...(value.contactRequestsAvailable === true ? { contactRequestsAvailable: true } : {}),
+            ...(value.organisationProfileAvailable === true ? { organisationProfileAvailable: true } : {}),
             ...(value.accountType ? { accountType: value.accountType } : {}),
             ...(value.accountLabel ? { accountLabel: value.accountLabel } : {}),
             ...(value.accountName ? { accountName: value.accountName } : {}) });
     }
     function sameSession(left, right) {
-        return ['purpose', 'generation', 'selectedBindingId', 'activationAvailable', 'clientSetupAvailable', 'workQueueAvailable', 'paidFrameworkStatusAvailable', 'contactRequestsAvailable', 'representativeDetailsAvailable', 'questionnaireExportGateAvailable', 'accountType', 'accountLabel', 'accountName']
+        return ['purpose', 'generation', 'selectedBindingId', 'activationAvailable', 'clientSetupAvailable', 'workQueueAvailable', 'paidFrameworkStatusAvailable', 'contactRequestsAvailable', 'organisationProfileAvailable', 'representativeDetailsAvailable', 'questionnaireExportGateAvailable', 'accountType', 'accountLabel', 'accountName']
             .every(function (key) { return left[key] === right[key]; });
     }
     function displayContract(model) {
@@ -612,7 +615,7 @@
             const headers = { Accept: 'application/json' };
             if (body === undefined) headers['X-NoFries-Support-Receipt'] = '1';
             if (body === undefined && path === '/api/dashboard/session') {
-                headers['X-NoFries-Dashboard-Capabilities'] = 'work-queue-v1 account-label-v1 contact-request-v1 starter-details-v1 questionnaire-details-v1 account-identity-v1 paid-status-v1';
+                headers['X-NoFries-Dashboard-Capabilities'] = 'work-queue-v1 account-label-v1 contact-request-v1 starter-details-v1 questionnaire-details-v1 account-identity-v1 paid-status-v1 organisation-profile-v1';
             }
             if (body !== undefined) headers['Content-Type'] = 'application/json';
             if (generation !== undefined) headers['X-NoFries-Dashboard-Generation'] = generation;
@@ -891,7 +894,8 @@
             ...(cyber && typeof cyber.readBaseline === 'function' ? { readBaseline: function () { return cyber.readBaseline(); } } : {}),
             ...(improvement ? { mountImprovement: improvement } : {}),
             ...(fresh.representativeDetailsAvailable === true ? { representativeDetails: detailsPort(cycle, snapshot) } : {}),
-            ...(fresh.contactRequestsAvailable === true ? { contactRequest: contactSender(cycle, snapshot) } : {}) });
+            ...(fresh.contactRequestsAvailable === true ? { contactRequest: contactSender(cycle, snapshot) } : {}),
+            ...(fresh.organisationProfileAvailable === true ? { organisationProfile: profilePort(cycle, snapshot) } : {}) });
         if (!controller || typeof controller.destroy !== 'function') throw invalid();
         if (cycle.openSelection && fresh.purpose === 'customer') saveLastOrganisation(fresh.selectedBindingId, fresh.expiresAt);
         elements.app.hidden = false;
@@ -1995,6 +1999,37 @@
             return result.value;
         }
         return { read: () => perform(), save: perform, isCurrent };
+    }
+    // #608: read and save the organisation's own profile. The server checks
+    // membership and, to save, organisation.manage; this only shapes results.
+    // read() resolves to the profile; save(values) to { status, profile? }.
+    function profilePort(cycle, snapshot) {
+        const PATH = '/api/dashboard/organisation-profile';
+        const isCurrent = () => current(cycle) && !cycle.authorityPending;
+        const profile = value => fields(value, ['schemaVersion', 'revision', 'website', 'industry', 'region', 'sizeBand', 'updatedAt',
+            ...(Object.prototype.hasOwnProperty.call(value || {}, 'choices') ? ['choices'] : [])]) && value.schemaVersion === 1 &&
+            Number.isSafeInteger(value.revision) && value.revision >= 0 ? value : null;
+        return {
+            isCurrent,
+            async read() {
+                if (!isCurrent()) throw invalid();
+                const result = await request(cycle, PATH, undefined, snapshot.generation);
+                const value = isCurrent() && result.status === 200 && profile(result.value);
+                if (!value || !value.choices) throw invalid();
+                return value;
+            },
+            async save(values) {
+                if (!isCurrent()) throw invalid();
+                const result = await request(cycle, PATH, values, snapshot.generation);
+                if (!isCurrent()) throw invalid();
+                if (result.status === 200 && profile(result.value)) return { status: 'saved', profile: result.value };
+                const code = result.value && result.value.code;
+                if (result.status === 409 && code === 'organisation_profile_conflict' && profile(result.value.profile)) return { status: 'conflict', profile: result.value.profile };
+                if (result.status === 403) return { status: 'denied' };
+                if (result.status === 400) return { status: 'invalid' };
+                throw invalid();
+            }
+        };
     }
     // #409: one "Ask No Fries to contact me" action. A fresh operation id per
     // user action; a network failure or 503 retries that same id, which the
