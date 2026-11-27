@@ -876,7 +876,8 @@
                 } else boardExport(handoff);
             }
             if (win && typeof win.print === 'function') {
-                const printButton = button('Print these results', () => win.print());
+                // Paper gets the summary alone, not the whole dashboard (#662).
+                const printButton = button('Print these results', () => typeof questionnaire.printOnly === 'function' ? questionnaire.printOnly(win, printed) : win.print());
                 printButton.classList.add('dashboard-button-secondary'); handoff.append(printButton);
             }
             handoff.append(status); return handoff;

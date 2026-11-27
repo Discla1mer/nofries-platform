@@ -3934,7 +3934,16 @@ describe('insurer and customer questionnaire answers', () => {
             control(ui, 'Copy answers').click(); await until(() => ui.root.textContent.includes('Summary selected.'));
             expect(ui.document.activeElement).toBe(input);
             dom.window.navigator = {}; control(ui, 'Copy answers').click(); expect(ui.document.activeElement).toBe(input);
+            // #662: only the answers go to paper; everything else is hidden for print, then restored.
+            const answers = ui.root.querySelector('.ncsc-questionnaire-answers');
+            dom.window.print.mockImplementationOnce(() => {
+                expect(answers.classList.contains('picture-print-only')).toBe(true);
+                expect(ui.root.querySelectorAll('.picture-print-hide').length).toBeGreaterThan(0);
+                expect(answers.querySelectorAll('.picture-print-hide')).toHaveLength(0);
+            });
             control(ui, 'Print answers').click(); expect(dom.window.print).toHaveBeenCalledTimes(1);
+            expect(answers.classList.contains('picture-print-only')).toBe(false);
+            expect(ui.root.querySelectorAll('.picture-print-hide')).toHaveLength(0);
             expect(h.calls).toHaveLength(before);
         } finally { ui.controller.destroy(); }
     });

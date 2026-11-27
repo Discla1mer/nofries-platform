@@ -1701,7 +1701,16 @@ describe('next step under the top gaps', () => {
         press('Copy summary'); await flush();
         assert.equal(status.textContent, 'Summary selected. Press Ctrl+C or Cmd+C to copy it.');
         assert.equal(dom.document.activeElement, input);
+        // #662: paper gets the summary alone; the rest of the page is hidden for print only, then restored.
+        const summaryPrinted = handoff.querySelectorAll('.picture-summary-print').find(item => !item.classList.contains('picture-board-print'));
+        assert.equal(summaryPrinted.textContent, input.value);
+        print.mockImplementationOnce(() => {
+            assert.ok(summaryPrinted.classList.contains('picture-print-only'));
+            assert.ok(input.classList.contains('picture-print-hide'));
+        });
         press('Print these results'); assert.equal(print.mock.calls.length, 1);
+        assert.equal(summaryPrinted.classList.contains('picture-print-only'), false);
+        assert.equal(dom.root.querySelectorAll('.picture-print-hide').length, 0);
         // Print board summary hides everything else for print only, then restores the page.
         const boardPrinted = handoff.querySelector('.picture-board-print');
         print.mockImplementationOnce(() => {
