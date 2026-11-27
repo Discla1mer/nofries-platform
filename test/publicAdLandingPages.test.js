@@ -19,7 +19,7 @@ test.each(pages)('%s gives the free check before the paid offer, without assuran
     expect(html.match(/<section\b/g)).toHaveLength(2);
     expect(html.match(/<li>/g).length).toBeGreaterThanOrEqual(3);
     expect(html.match(/<li>/g).length).toBeLessThanOrEqual(4);
-    expect(text).toMatch(/15 minutes.*free check.*top three gaps, ranked.*summary for your board or insurer.*Results reflect your answers/);
+    expect(text).toMatch(/15 minutes.*free check.*top five gaps, ranked by how much each question counts.*summary for your board or insurer.*Results reflect your answers/);
     expect(html).toContain('href="/login?intent=create">Create a free account</a>');
     expect(text).toContain('See pricing and what’s included');
     expect(html).toContain('href="/pricing#pricing-pilot"');
@@ -120,4 +120,16 @@ test('the campaign hop keeps the validated same-tab tag through the anchored Con
 test('short scam addresses redirect to the invoice-scam page (#697)', () => {
     for (const route of ['/scams', '/scam', '/scams.html', '/scam.html'])
         expect(config.routes.find(item => item.route === route)).toEqual({ route, redirect: '/invoice-scams', statusCode: 301 });
+});
+
+// #727: public pages state the same count and ranking as the v2 results heading.
+test('no public page still promises a fixed "top three gaps" order', () => {
+    const fs = require('fs'), path = require('path');
+    for (const page of ['index.html', 'board.html', 'insurance.html', 'supplier-questionnaire.html', 'invoice-scams.html', 'pricing.html', 'roadmap.html']) {
+        const html = fs.readFileSync(path.join(__dirname, '..', page), 'utf8');
+        expect(html).not.toMatch(/top three gaps/i);
+        expect(html).not.toMatch(/patching, backups and payment-change checks come first/i);
+    }
+    const client = fs.readFileSync(path.join(__dirname, '../api/shared/protectedAssets/ncscQuestionnaire.js'), 'utf8');
+    expect(client).toMatch(/V2_GAP_LIMIT = 5\b/);
 });
