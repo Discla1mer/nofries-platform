@@ -172,7 +172,7 @@ describe('v2 results in the questionnaire', () => {
         if (!['unknown', 'not_applicable'].includes(saved)) expect(byId['patch-speed'].basis).toContain("did not ask for your insurer's deadline");
         expect(byId['patch-speed'].question).toContain('deadline');
         expect(byId.endpoint.answer).toBe('Not covered by this check');
-        expect(byId.endpoint.basis).toBe('This check does not ask about this. Confirm with your IT provider before answering.');
+        expect(byId.endpoint.basis).toBe('This check does not ask about this. Confirm it before answering.');
         if (saved === 'unknown') expect(byId.assets.basis).toBe("Your saved answer: I don't know. Confirm this before answering.");
         // The copied text is the answers only; coaching stays on screen.
         expect(report.text).not.toContain('To answer Yes'); expect(report.text).not.toContain('Check the exact coverage');

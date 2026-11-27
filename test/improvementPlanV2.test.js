@@ -118,7 +118,7 @@ describe('Improvement Plans by stored profile', () => {
         expect(rows.get('NF-NCSC-CC-SU-01-Q1')).toMatchObject({ controlId: 'NF-NCSC-CC-SU-01', domainId: 'prevent-protect',
             suggestedAction: 'List who has access, turn on the extra login step, and add a breach-notice clause.' });
         expect(rows.get('NF-NCSC-CC-EM-01-Q1')).toMatchObject({ controlId: 'NF-NCSC-CC-EM-01',
-            suggestedAction: 'Find out whether this is in place, for example by asking your IT provider, then update your answer.' });
+            suggestedAction: 'Find out whether this is in place, for example by asking whoever looks after your IT or No Fries, then update your answer.' });
         expect(rows.get('NF-NCSC-MCSS-PA-01-Q1').suggestedAction)
             .toBe('Turn on automatic updates. If you have a website, ask your host or developer to confirm it is patched.');
         expect(rows.get('NF-NCSC-MCSS-MF-01-Q2').suggestedAction)

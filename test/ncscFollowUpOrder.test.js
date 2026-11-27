@@ -60,6 +60,28 @@ test('the IT-provider summary leads with the on-screen top gaps on scoring v2 (#
     expect(order.slice(2)).toEqual([control(pick('RM')), control(pick('PM'))]);
 });
 
+// Owner direction, 28 Nov 2026: gap help points to No Fries, not away to "your IT provider".
+test('follow-ups and the copied summary never send the customer to their IT provider', () => {
+    const fs = require('fs'), path = require('path');
+    const metadata = createNcscQuestionnaireMetadata();
+    const ids = metadata.questions.map(question => question.id);
+    const options = ['no', 'partial', 'unknown', 'not_applicable'];
+    const assessment = { scopePopulation: { description: 'Synthetic scope' }, submission: { submittedAt: '2026-11-26T00:00:00.000Z' },
+        responses: ids.map((itemId, index) => ({ itemId, optionId: options[index % options.length] })) };
+    const summary = questionnaire.providerSummary(assessment, metadata);
+    expect(summary.items.length).toBeGreaterThan(3);
+    expect(summary.items.some(item => item.action === 'Not sure? No Fries can check what is in place with you.')).toBe(true);
+    for (const item of summary.items) expect(['', 'You can start this with your team.']).toContain(item.owner);
+    expect(summary.text).not.toMatch(/IT provider to (help|check)|with your IT provider/);
+    expect(summary.text).not.toContain(':  ');
+    for (const file of ['ncscQuestionnaire.js', 'organisationPicture.js']) {
+        const source = fs.readFileSync(path.join(__dirname, '../api/shared/protectedAssets', file), 'utf8');
+        expect(source).not.toMatch(/Ask your IT provider|with your IT provider|No IT provider\?/);
+    }
+    const shown = fs.readFileSync(path.join(__dirname, '../api/shared/protectedAssets/ncscQuestionnaire.js'), 'utf8');
+    expect(shown.match(/No Fries can help you fix any of these\./g)).toHaveLength(1);
+});
+
 // #657: the dashboard shows the 90-day price; it must match /pricing.
 test('the 90-day price in the dashboard matches the pricing page', () => {
     const fs = require('fs'), path = require('path');

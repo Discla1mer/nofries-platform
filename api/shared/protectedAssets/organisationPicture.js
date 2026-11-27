@@ -771,9 +771,6 @@
         function gapSection(result) {
             const section = questionnaire.rankedGapSection(node, result, selectedMetadata(), id + '-top-gaps',
                 gap => planGap && improvementSelection() ? gapPlanControls(gap) : [], displayedGaps);
-            for (const owner of section.querySelectorAll('.picture-gap-owner')) {
-                if (owner.textContent === 'Ask your IT provider to help with this.') owner.remove();
-            }
             if (section.querySelector('ol')) section.append(helpPanel());
             return section;
         }
