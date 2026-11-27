@@ -225,6 +225,13 @@ a.picture-action-title { font-weight: 600; text-decoration: underline; text-unde
 @media print { .picture-board-actions, .picture-board-actions + [role="status"] { display: none !important; } }
 .picture-summary label { display: block; margin-top: .75rem; }
 @media print { .picture-print-hide { display: none !important; } .picture-print-only { display: block; margin: 0; font-size: 11pt; line-height: 1.45; } }
+/* Any print from the dashboard, including the browser's own Print, leaves out the
+   site header and footer, the organisation bar and who is signed in (#662). */
+@media print {
+    body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"]) :is(.site-header, .home-footer, .site-release, .dashboard-topbar, .dashboard-account-identity) { display: none !important; }
+    pre.picture-print-only { white-space: pre-wrap; overflow-wrap: anywhere; font-family: inherit; }
+    .ncsc-questionnaire-answers.picture-print-only { break-before: auto; }
+}
 @media (max-width: 60rem) {
     .picture-metrics { grid-template-columns: minmax(0, 1fr); }
     .picture-metric h3 { min-height: 0; }

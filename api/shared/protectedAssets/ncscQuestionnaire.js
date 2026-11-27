@@ -2113,7 +2113,10 @@
             const copied = node('p', 'dashboard-muted'); copied.setAttribute('role', 'status');
             const copy = button('Copy summary', function () { copySummary(win, input, copied); }, 'dashboard-button dashboard-button-secondary');
             handoff.append(copy);
-            if (win && typeof win.print === 'function') handoff.append(button('Print these results', function () { win.print(); }, 'dashboard-button dashboard-button-secondary'));
+            // Paper gets the summary itself, not the whole dashboard (#662): title,
+            // scope, date and the follow-ups, with no navigation or account details.
+            const printed = node('pre', 'picture-summary-print', summary.text); printed.setAttribute('aria-hidden', 'true'); handoff.append(printed);
+            if (win && typeof win.print === 'function') handoff.append(button('Print these results', function () { printOnly(win, printed); }, 'dashboard-button dashboard-button-secondary'));
             handoff.append(copied); section.append(handoff); panel.append(section);
         }
         function renderQuestionnaireAnswers(panel) {
@@ -2147,7 +2150,7 @@
                 const input = node('textarea', 'ncsc-textarea'); input.id = label.htmlFor; input.readOnly = true; input.rows = 5; input.value = report.text;
                 const copied = node('p', 'dashboard-muted'); copied.setAttribute('role', 'status');
                 controls.append(label, input, button('Copy answers', function () { copySummary(win, input, copied); }, 'dashboard-button dashboard-button-secondary'));
-                if (win && typeof win.print === 'function') controls.append(button('Print answers', function () { win.print(); }, 'dashboard-button dashboard-button-secondary'));
+                if (win && typeof win.print === 'function') controls.append(button('Print answers', function () { printOnly(win, section); }, 'dashboard-button dashboard-button-secondary'));
                 controls.append(copied);
                 if (gated) section.setAttribute('data-export-ready', 'true');
                 return controls;
@@ -2844,5 +2847,5 @@
         else openAssessment(initialAssessmentId);
         return controller;
     }
-    return Object.freeze({ mount: mount, topGaps, confirmNext, v2Shortfall, rankedGapSection, resultModel: resultModel, providerSummary: providerSummary, boardSummary: boardSummary, questionnaireAnswers: questionnaireAnswers, resultsCampaign: resultsCampaign, boardSummaryBlock: boardSummaryBlock, managedSecurityOffer: managedSecurityOffer, copySummary: copySummary, enoughAnswersToEstimate: enoughAnswersToEstimate });
+    return Object.freeze({ mount: mount, topGaps, confirmNext, v2Shortfall, rankedGapSection, resultModel: resultModel, providerSummary: providerSummary, boardSummary: boardSummary, questionnaireAnswers: questionnaireAnswers, resultsCampaign: resultsCampaign, boardSummaryBlock: boardSummaryBlock, printOnly: printOnly, managedSecurityOffer: managedSecurityOffer, copySummary: copySummary, enoughAnswersToEstimate: enoughAnswersToEstimate });
 }));
