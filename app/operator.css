@@ -291,6 +291,17 @@ input, select, textarea { background: #fff; }
 #accountLookupResults td button { min-height: 36px; padding: 6px 12px; border: 1px solid var(--teal-dark); border-radius: 8px; background: var(--panel); color: var(--teal-dark); font: inherit; font-weight: 700; cursor: pointer; }
 #accountLookupResults td button:disabled { opacity: .55; cursor: progress; }
 #accountLookupResults td ul { margin: 6px 0 0; padding-left: 18px; }
+/* Lookup result: one record card per account, each field labelled above its
+   value. Eleven narrow columns broke words mid-letter at every width. */
+#accountLookupResults table, #accountLookupResults tbody { display: block; width: 100%; }
+#accountLookupResults thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+#accountLookupResults caption { display: block; padding-bottom: 8px; text-align: left; color: var(--muted); font-size: 14px; }
+#accountLookupResults tr { display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); gap: 16px 28px; margin: 0 0 14px; padding: 18px 20px; border: 1px solid var(--line); border-radius: 12px; background: #fff; }
+#accountLookupResults td { display: block; min-width: 0; padding: 0; border: 0; overflow-wrap: anywhere; }
+#accountLookupResults td[data-label]::before { display: block; margin-bottom: 2px; content: attr(data-label); color: var(--muted); font-size: 13px; font-weight: 700; }
+#accountLookupResults td:first-child { font-weight: 700; }
+#accountLookupResults td[data-label="Dashboard access"], #accountLookupResults td[data-label="Select"], #accountLookupResults td:not([data-label]) { grid-column: 1 / -1; }
+#accountLookupResults td[data-label="Dashboard access"] { padding-top: 14px; border-top: 1px solid var(--line); }
 @media (max-width: 700px) {
     #accountLookupPanel, #accountListPanel { padding: 16px; border-radius: 14px; }
     #accountLookupForm { display: grid; grid-template-columns: 1fr; }
