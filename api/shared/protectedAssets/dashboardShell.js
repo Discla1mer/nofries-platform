@@ -502,8 +502,13 @@
             const requests = element('a', '', 'Request a data export or deletion');
             requests.href = '/privacy.html#requests';
             privacy.append(requests);
+            // #734 (D): say how long a sign-in lasts. The server ends a session 4 hours
+            // after sign-in (SESSION_ABSOLUTE_TTL_MS) and has no idle timeout.
+            const security = panel('Security');
+            security.append(element('p', '', 'You stay signed in for up to 4 hours, even if you\'re not using the dashboard. Sign out when you leave a shared computer.'),
+                element('p', 'dashboard-muted', 'Sign out from the Account menu ends the session in this browser.'));
             const organisation = panel('Organisation profile', model.context.displayName);
-            main.append(account, notifications, privacy, organisation);
+            main.append(account, security, notifications, privacy, organisation);
             if (options.organisationProfile && typeof options.organisationProfile.read === 'function') renderOrganisationProfile(organisation, options.organisationProfile);
         }
         // #608: the organisation's website, industry, region and size. The

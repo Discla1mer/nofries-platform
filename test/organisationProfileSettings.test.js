@@ -76,3 +76,13 @@ test('a failed read or save says so without showing stale success', async () => 
     expect(h.byId('organisation-profile-status').textContent).toBe('Your details weren\'t saved. Try again.');
     h.controller.destroy();
 });
+
+// #734 (D): Settings states the real session length, taken from the server constant.
+test('Settings says how long a sign-in lasts, matching the server session limit', () => {
+    const fs = require('fs'), path = require('path');
+    const h = mount();
+    expect(h.dom.root.textContent).toContain('You stay signed in for up to 4 hours, even if you\'re not using the dashboard. Sign out when you leave a shared computer.');
+    h.controller.destroy();
+    const auth = fs.readFileSync(path.join(__dirname, '../api/shared/browserAuth.js'), 'utf8');
+    expect(auth).toContain('const SESSION_ABSOLUTE_TTL_MS = 4 * 60 * 60 * 1000;');
+});
