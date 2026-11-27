@@ -1160,9 +1160,16 @@ test('comparing submitted assessments shows saved ranges and coverage without di
     assert.deepEqual(reads, [later.assessmentId, earlier.assessmentId]);
     section = trendSection(dom);
     assert.match(section.textContent, /Compared with the previous assessment, submitted 10 Sept 2026/);
-    assert.match(section.querySelector('.ncsc-warning').textContent, /matching saved scope descriptions do not establish the same real-world population/);
+    // #731: one message, naming the shared question set once and why no change is calculated.
+    assert.equal(section.querySelector('.ncsc-warning').textContent, 'Same accepted questions and weights in both and the same saved scope description. ' +
+        'That still does not show the same real-world setup, so this is not a measure of improvement or decline. Saved results are shown side by side; no change is calculated.');
+    assert.doesNotMatch(section.textContent, /Not comparable|use the same set of questions|accepted profile and included question weights/);
     const rows = trendRows(dom);
     assert.deepEqual(rows[0], ['Overall', '0.0%', '100.0%']);
+    // The answers behind the 0% to 100% jump are listed, earlier → selected.
+    const changes = section.querySelector('.picture-trend-changes').querySelectorAll('li');
+    assert.equal(changes.length, dom.fixtures.metadata.questions.length);
+    assert.ok(changes.every(item => / → Yes$/.test(item.textContent) && !/Yes → Yes/.test(item.textContent)));
     assert.equal(rows.length, 1 + dom.fixtures.metadata.domains.length);
     assert.deepEqual(rows.slice(1).map(row => row[0]), dom.fixtures.metadata.domains.map(domain => domain.title));
     assert.ok(rows.slice(1).every(row => row[2] === '100.0%' && row.length === 3));
@@ -1220,7 +1227,7 @@ test('different scopes suppress change, and the earliest record has no previous 
     const dom = setup({ client, options: { initialAssessmentId: later.assessmentId } }); await flush();
     click(dom, 'Compare with previous assessment'); await flush();
     assert.deepEqual(trendRows(dom)[0], ['Overall', '100.0%', '46.4%–60.7%']);
-    assert.match(trendSection(dom).querySelector('.ncsc-warning').textContent, /saved scope declarations differ/);
+    assert.match(trendSection(dom).querySelector('.ncsc-warning').textContent, /your business details \(scope\) differ, so this is not a measure of improvement or decline/);
     change(dom.root.querySelector('.picture-toolbar').querySelector('select'), earlier.assessmentId); await flush();
     assert.equal(reads.length, 3);
     assert.equal(trendSection(dom).querySelectorAll('button').map(button => button.textContent).join(), 'Compare with later assessments');
@@ -1797,8 +1804,10 @@ describe('honest saved-assessment comparisons', () => {
         assert.ok(section.textContent.includes(shared + ' questions have one of these answers in both.'));
         assert.match(section.textContent, /Unknown and Not applicable answers stay unresolved/);
         assert.doesNotMatch(section.textContent, /unapproved N\/A|approval workflow/);
-        assert.match(section.textContent, /Not comparable as improvement or decline/);
+        assert.match(section.textContent, /same saved scope description\. That still does not show the same real-world setup, so this is not a measure of improvement or decline/);
+        assert.doesNotMatch(section.textContent, /use the same set of questions/);
         assert.equal(section.textContent.includes('The set of questions answered Yes, Partial or No also differs.'), differs);
+        if (_label === 'unchanged unresolved coverage') assert.equal(section.querySelector('.picture-trend-changes-none').textContent, 'No answers changed.');
         assert.doesNotMatch(section.textContent, /Up \d|Down \d|No change|Lower-bound change/);
         assert.deepEqual(section.querySelector('thead').querySelectorAll('th').map(cell => cell.textContent), ['Area', 'Previous', 'Selected']);
         assert.equal(dom.root.querySelector('.picture-metrics').textContent, metrics);

@@ -603,7 +603,11 @@
                 attainment: result.attainment, total: result.total,
                 answered: new Set(result.domains.flatMap(domain => domain.controls.flatMap(control => control.questions))
                     .filter(answered).map(question => question.itemId)),
-                domains: result.domains.map(domain => ({ title: domain.title, attainment: domain.attainment })) };
+                domains: result.domains.map(domain => ({ title: domain.title, attainment: domain.attainment })),
+                // Each saved answer by question, so Compare can list the answers
+                // behind a changed figure (#731).
+                answers: new Map(result.domains.flatMap(domain => domain.controls.flatMap(control => control.questions.map((question, index) =>
+                    [question.itemId, { answer: question.answer, title: control.questions.length > 1 ? control.title + ' (question ' + (index + 1) + ')' : control.title }])))) };
         }
         function trendSection(result) {
             const section = node('section', 'picture-trend'), key = epoch + ':' + detail.assessmentId;
@@ -699,11 +703,16 @@
                 section.append(node('p', 'picture-trend-coverage', 'Question coverage: ' + earlier + ' ' +
                     previous.answered.size + ' of ' + previous.total + '; selected ' + current.answered.size + ' of ' + current.total +
                     ' answered Yes, Partial or No. ' + shared + ' questions have one of these answers in both. Unknown and Not applicable answers stay unresolved.'));
-                section.append(node('p', 'ncsc-warning', 'Not comparable as improvement or decline: ' +
-                    (previous.scope !== current.scope ? 'the saved scope declarations differ.'
-                        : 'matching saved scope descriptions do not establish the same real-world population.') +
+                // One message from one comparability state (#441 M6-01, #731): the
+                // question set is always the same here (other sets are left out
+                // above), so say that once, then why no change is calculated.
+                const count = selectedMetadata().questions.length;
+                section.append(node('p', 'ncsc-warning', (trend.v2 ? 'Same ' + count + ' questions and weights in both'
+                    : 'Same accepted questions and weights in both') +
+                    (previous.scope !== current.scope ? ', but your business details (scope) differ, so this is not a measure of improvement or decline.'
+                        : ' and the same saved scope description. That still does not show the same real-world setup, so this is not a measure of improvement or decline.') +
                     (!sameCoverage ? ' The set of questions answered Yes, Partial or No also differs.' : '') +
-                    ' Saved ranges are shown separately; no change is calculated.'));
+                    ' Saved results are shown side by side; no change is calculated.'));
                 const table = node('table', 'picture-trend-table');
                 table.append(node('caption', '', 'Reported implementation, ' + earlier.toLowerCase() + ' and selected'));
                 const head = node('thead'), headRow = node('tr');
@@ -717,9 +726,19 @@
                 };
                 line('Overall', previous, current);
                 current.domains.forEach((domain, position) => line(domain.title, previous.domains[position], domain));
-                table.append(head, body); section.append(table,
-                    node('p', 'dashboard-muted', (trend.v2 ? 'Both saved results use the same set of questions and question weights.'
-                        : 'Both saved results use the accepted profile and included question weights.') + ' Shared question coverage is not proof of equivalent scope, control effectiveness or a risk trend. Unknown and Not applicable answers still add to the higher figure; no subset is re-scored.'));
+                table.append(head, body); section.append(table);
+                // The answers behind any changed figure, in question order.
+                const changed = [...current.answers].filter(([itemId, now]) => previous.answers.has(itemId) && previous.answers.get(itemId).answer !== now.answer);
+                section.append(node('h4', '', 'Answers that changed'));
+                if (changed.length) {
+                    const list = node('ul', 'picture-trend-changes');
+                    changed.forEach(([itemId, now]) => {
+                        const item = node('li', '', now.title + ': ' + previous.answers.get(itemId).answer + ' → ' + now.answer);
+                        item.dataset.itemId = itemId; list.append(item);
+                    });
+                    section.append(list);
+                } else section.append(node('p', 'picture-trend-changes-none', 'No answers changed.'));
+                section.append(node('p', 'dashboard-muted', 'Shared question coverage is not proof of equivalent scope, control effectiveness or a risk trend. Unknown and Not applicable answers still add to the higher figure; no subset is re-scored.'));
             }
             section.append(node('h4', '', 'Submitted assessments'));
             const list = node('ol', 'picture-trend-history');
