@@ -1852,6 +1852,9 @@
             }
             if (results && options.appendFrameworkComparison) options.appendFrameworkComparison(panel);
             renderNextSteps(panel);
+            // The board or insurer summary is on Results for every visit, not only
+            // when a board or insurance campaign tag survived sign-up (#441 G04).
+            if (results && campaign !== 'board' && campaign !== 'insurance') appendBoardSummary();
             if (!questionnaireFirst) renderQuestionnaireAnswers(panel);
             if (!results) {
                 panel.append(node('p', 'ncsc-warning', 'Results are unavailable for this submission. Your saved answers remain below. Reopen the assessment to try again.'),

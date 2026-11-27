@@ -3886,11 +3886,11 @@ describe('campaign Results next steps', () => {
     const renderer = require('../api/shared/protectedAssets/ncscQuestionnaire');
     const cases = [
         ['insurance', ['ncsc-questionnaire-answers', 'ncsc-board-next-step picture-summary', 'picture-top-gaps', 'ncsc-next-steps']],
-        ['supplier', ['ncsc-questionnaire-answers', 'picture-top-gaps', 'ncsc-next-steps']],
+        ['supplier', ['ncsc-questionnaire-answers', 'picture-top-gaps', 'ncsc-next-steps', 'ncsc-board-next-step picture-summary']],
         ['board', ['ncsc-board-next-step picture-summary', 'picture-top-gaps', 'ncsc-next-steps', 'ncsc-questionnaire-answers']],
-        ['scam', ['ncsc-payment-next-step', 'picture-next-steps-help', 'picture-top-gaps', 'ncsc-next-steps', 'ncsc-questionnaire-answers']],
-        ['', ['picture-top-gaps', 'ncsc-next-steps', 'ncsc-questionnaire-answers']],
-        ['unrecognised', ['picture-top-gaps', 'ncsc-next-steps', 'ncsc-questionnaire-answers']]
+        ['scam', ['ncsc-payment-next-step', 'picture-next-steps-help', 'picture-top-gaps', 'ncsc-next-steps', 'ncsc-board-next-step picture-summary', 'ncsc-questionnaire-answers']],
+        ['', ['picture-top-gaps', 'ncsc-next-steps', 'ncsc-board-next-step picture-summary', 'ncsc-questionnaire-answers']],
+        ['unrecognised', ['picture-top-gaps', 'ncsc-next-steps', 'ncsc-board-next-step picture-summary', 'ncsc-questionnaire-answers']]
     ];
     const campaignDom = campaign => {
         const dom = interactiveDom();
@@ -3913,7 +3913,8 @@ describe('campaign Results next steps', () => {
             expect([...h.versions.values()]).toEqual(before);
             expect(dom.window.sessionStorage.getItem).toHaveBeenCalledWith('nofries-enquiry-campaign');
             expect(dom.window.sessionStorage.setItem).not.toHaveBeenCalled(); expect(dom.window.sessionStorage.removeItem).not.toHaveBeenCalled();
-            if (campaign === 'board' || campaign === 'insurance') {
+            // #441 G04: every campaign, and none, offers the board summary on Results.
+            {
                 control(ui, 'Copy board summary').click();
                 expect(withoutTopGaps(dom.window.navigator.clipboard.writeText.mock.calls.at(-1)[0])).toBe(renderer.boardSummary(projectNcscDetail(before[0]), metadata()).text);
                 control(ui, 'Print board summary').click(); expect(dom.window.print).toHaveBeenCalledTimes(1);
