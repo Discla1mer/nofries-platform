@@ -388,6 +388,10 @@ progress.ncsc-saved-progress::-moz-progress-bar { background: var(--dashboard-bl
 .ncsc-question-navigation { justify-content: space-between; }
 .ncsc-navigation-more { display: contents; }
 .ncsc-navigation-more-toggle { display: none; }
+/* Review and submit joins the bar when every answer is in (#725). */
+.ncsc-navigation-review-slot { display: contents; }
+.ncsc-navigation-actions [hidden], .ncsc-navigation-ready[hidden] { display: none; }
+.ncsc-navigation-ready { flex-basis: 100%; margin: 0; font-size: var(--dashboard-font-small); color: var(--dashboard-muted, #5f574b); }
 .ncsc-warning, .ncsc-errors, .ncsc-sealed { padding: 1.15rem; margin: 1rem 0; border: 1px solid #c29221; border-left: 4px solid var(--dashboard-yellow); border-radius: .7rem; background: #f2e4bc; }
 .ncsc-warning button { margin: .3rem .6rem .3rem 0; }
 .ncsc-errors { border-color: #a3352a; background: #f6ddd6; }
@@ -426,6 +430,8 @@ progress.ncsc-saved-progress::-moz-progress-bar { background: var(--dashboard-bl
     .ncsc-navigation-more-toggle { display: block; }
     .ncsc-navigation-more { display: grid; grid-column: 1 / -1; gap: .4rem; }
     .ncsc-navigation-more.ncsc-navigation-collapsed { display: none; }
+    /* On a phone Review and submit takes the whole top row of the bar. */
+    .ncsc-navigation-review-slot > button { grid-column: 1 / -1; order: -1; }
     .ncsc-actions > button { width: 100%; text-align: center; }
     .ncsc-review-item .dashboard-text-button { width: 100%; text-align: center; }
     .ncsc-review-counts { flex-direction: column; }

@@ -1107,6 +1107,34 @@ describe('questionnaire draft progress and unanswered navigation', () => {
         expect(h.records).toHaveLength(1); ui.controller.destroy();
     });
 
+    test('the question bar offers Review and submit on the last question and once every answer is in (#725)', async () => {
+        const h = await backend(), ui = await createInUi(h), questions = metadata().questions;
+        try {
+            const review = () => byId(ui, 'ncsc-navigation-review'), ready = () => byId(ui, 'ncsc-navigation-ready');
+            expect(review()).toBeFalsy(); expect(ready().hidden).toBe(true);
+            expect(control(ui, 'Next question').className).toBe('dashboard-button');
+            // Last question, not all answered: Review replaces the dead-end Next.
+            navigate(ui, questions.length - 1);
+            expect(review().className).toBe('dashboard-button');
+            expect(review().closest('.ncsc-question-navigation')).toBeTruthy();
+            expect(control(ui, 'Next question').hidden).toBe(true); expect(ready().hidden).toBe(true);
+            navigate(ui, 0); expect(review()).toBeFalsy(); expect(control(ui, 'Next question').hidden).toBe(false);
+            // Every question answered: Review is offered from any question, with a status line.
+            questions.forEach((question, index) => choose(ui, index, 'yes'));
+            navigate(ui, 2);
+            expect(review().className).toBe('dashboard-button');
+            expect(control(ui, 'Next question').className).toContain('dashboard-button-secondary');
+            expect(control(ui, 'Next question').hidden).toBe(false);
+            expect(ready().hidden).toBe(false);
+            expect(ready().textContent).toBe(`All ${questions.length} answered. Review and submit when ready.`);
+            // Clearing an answer takes the status line away; Review returns to the last question only.
+            control(ui, 'Clear answer').click();
+            expect(review()).toBeFalsy(); expect(ready().hidden).toBe(true);
+            choose(ui, 2, 'no');
+            review().click(); expect(ui.root.querySelector('.ncsc-review')).toBeTruthy();
+        } finally { ui.controller.destroy(); }
+    });
+
     test('question navigation keeps Previous and Next first, with the jump buttons behind More in tab order', async () => {
         const h = await backend(), ui = await createInUi(h);
         try {
@@ -3280,12 +3308,15 @@ describe('questionnaire native unload lifecycle and task hierarchy', () => {
         } finally { ui.controller.destroy(); }
     });
 
-    test('Save stays primary and Review opens without writing', async () => {
+    test('Review and submit is a button with one primary action below the question, and opens without writing', async () => {
         const h = await backend(), ui = await createInUi(h);
         try {
             const save = control(ui, 'Save progress'), submit = control(ui, 'Review and submit');
             expect(save.classList.contains('dashboard-button')).toBe(true);
-            expect(submit.classList.contains('dashboard-text-button')).toBe(true);
+            // #725: no longer a borderless text link; Save or Review is primary, never both.
+            expect(submit.classList.contains('dashboard-text-button')).toBe(false);
+            expect(submit.classList.contains('dashboard-button')).toBe(true);
+            expect([save, submit].filter(item => !item.classList.contains('dashboard-button-secondary'))).toHaveLength(1);
             expect(submit.getAttribute('aria-describedby')).toBeNull();
             submit.click(); expect(ui.root.querySelector('.ncsc-review')).toBeTruthy();
             expect(h.records).toHaveLength(1);
