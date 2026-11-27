@@ -205,11 +205,19 @@
 
     // Plain names for people. Codes stay in each action's identifiers.
     const plainKinds = { implementation: 'Gap to fix', assessment: 'Answer to check', applicability: 'Answer to check', evidence: 'Evidence to add' };
+    // Scoring v2 splits some controls into two questions, which share one control
+    // title; name what the second question covers so plan actions differ (#441).
+    const SECOND_QUESTION_FOCUS = Object.freeze({ 'NF-NCSC-MCSS-MF-01-Q2': 'login method', 'NF-NCSC-MCSS-DR-01-Q2': 'restore tests' });
+    function secondQuestionFocus(itemId) {
+        const match = typeof itemId === 'string' && /-Q([2-9])$/.exec(itemId);
+        if (!match) return '';
+        return ': ' + (own(SECOND_QUESTION_FOCUS, itemId) ? SECOND_QUESTION_FOCUS[itemId] : 'question ' + match[1]);
+    }
     function actionTitle(action, titles) {
         const retainedTitle = titles && typeof titles === 'object' && own(titles, action.controlId) && typeof titles[action.controlId] === 'string' &&
             titles[action.controlId].trim() && titles[action.controlId].length <= 200 ? titles[action.controlId].trim() : '';
         const title = retainedTitle.replace(/^No Fries Critical Control extension\s*[—–·:-]\s*/i, '').trim() || 'Control to review';
-        return title + ' · ' + (own(plainKinds, action.rationale.kind) ? plainKinds[action.rationale.kind] : action.labels.kind);
+        return title + secondQuestionFocus(action.itemId) + ' · ' + (own(plainKinds, action.rationale.kind) ? plainKinds[action.rationale.kind] : action.labels.kind);
     }
     // A gap's concrete follow-up for its topic, as the results show it (F1-R10).
     // The retained rationale stays the record; this is display wording only.
