@@ -377,7 +377,11 @@
             current = target;
             if (doc && current && current.label) doc.title = current.label + ' · No Fries Dashboard';
             status.hidden = !!requested || !route;
-            status.textContent = requested || !route ? '' : 'We couldn\'t find that page, so we\'ve taken you to ' + target.label + '.';
+            // #685: Evidence exists but is not switched on for this account, so say that
+            // instead of the generic not-found line. Other routes keep the generic line.
+            status.textContent = requested || !route ? ''
+                : route === 'evidence' || route === '#evidence' ? 'Evidence storage isn\'t available on this account yet, so we\'ve taken you to ' + target.label + '.'
+                : 'We couldn\'t find that page, so we\'ve taken you to ' + target.label + '.';
             if (changeLocation && !repeatedRoute) pushEntry(current.route);
             if (historyTarget) cyberLocation = historyTarget.location || null;
             else if (committedEntry || current.key !== 'cyber_security') cyberLocation = null;

@@ -835,6 +835,13 @@ for (const managed of [false, true]) test(`repeating the current Services route 
     assert.equal(dom.root.querySelector('h1').textContent, 'Cyber Security');
 });
 
+test('#685: /dashboard#evidence without the Evidence module says so instead of "couldn\'t find that page"', () => {
+    const dom = mount(view({ role: 'viewer' }), { initialRoute: '#evidence' });
+    assert.equal(dom.root.querySelector('h1').textContent, 'Overview');
+    assert.match(dom.root.textContent, /Evidence storage isn't available on this account yet, so we've taken you to Overview\./);
+    assert.doesNotMatch(dom.root.textContent, /We couldn't find that page/);
+});
+
 test('selecting the current fallback module still replaces an invalid fragment with its canonical route', async () => {
     const dom = historyDom();
     dom.window.location.hash = '#unknown'; await tick();
