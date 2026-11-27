@@ -247,7 +247,7 @@ describe('dashboard loader', () => {
     test('advertises the contact capability on session reads', async () => {
         const h = harness(); await ready(h);
         h.requests.filter(item => item.url === '/api/dashboard/session').forEach(item =>
-            expect(item.init.headers['X-NoFries-Dashboard-Capabilities']).toBe('work-queue-v1 account-label-v1 contact-request-v1 starter-details-v1 questionnaire-details-v1 account-identity-v1 paid-status-v1'));
+            expect(item.init.headers['X-NoFries-Dashboard-Capabilities']).toBe('work-queue-v1 account-label-v1 contact-request-v1 starter-details-v1 questionnaire-details-v1 account-identity-v1 paid-status-v1 organisation-profile-v1'));
     });
     test('without the session field no control is shown', async () => {
         const session = account(); delete session.contactRequestsAvailable;
@@ -257,6 +257,46 @@ describe('dashboard loader', () => {
     test.each([false, 'true', 1, null])('a malformed contactRequestsAvailable %p fails closed', async value => {
         const h = harness(); await settle(); await h.reply(0, 200, account({ contactRequestsAvailable: value }));
         expect(h.status).toBe('unavailable'); expect(h.requests).toHaveLength(1);
+    });
+    // #608: the organisation profile port, through the delivered loader.
+    describe('organisation profile', () => {
+        const CHOICES = { industries: [{ code: 'retail', label: 'Retail and wholesale' }], regions: [{ code: 'otago', label: 'Otago' }], sizeBands: [{ code: '2-5', label: '2 to 5 people' }] };
+        const stored = values => ({ schemaVersion: 1, revision: 0, website: null, industry: null, region: null, sizeBand: null, updatedAt: null, ...values });
+        const profileCalls = h => h.requests.filter(item => item.url === '/api/dashboard/organisation-profile');
+        const walk = node => [node, ...node.children.flatMap(walk)];
+        const byId = (h, id) => walk(h.elements.dashboardApp).find(node => node.id === id) || null;
+        async function settings(h) {
+            h.window.location.hash = '#settings'; h.window.dispatch('hashchange'); await settle();
+        }
+        test.each([false, 'true', 1, null])('a malformed organisationProfileAvailable %p fails closed', async value => {
+            const h = harness(); await settle(); await h.reply(0, 200, account({ organisationProfileAvailable: value }));
+            expect(h.status).toBe('unavailable'); expect(h.requests).toHaveLength(1);
+        });
+        test('without the session field Settings makes no profile request', async () => {
+            const h = harness(); await ready(h); await settings(h);
+            expect(profileCalls(h)).toEqual([]);
+        });
+        test('Settings reads the profile with the generation, saves with its revision and shows a conflict', async () => {
+            const session = account({ organisationProfileAvailable: true });
+            const h = harness(); await ready(h, session); await settings(h);
+            const [read] = profileCalls(h);
+            expect(read.init.method).toBe('GET'); expect(read.init.headers['X-NoFries-Dashboard-Generation']).toBe(GA);
+            await h.reply(h.requests.indexOf(read), 200, stored({ revision: 4, industry: 'retail', choices: CHOICES }));
+            expect(byId(h, 'organisation-profile-industry').value).toBe('retail');
+            const form = h.elements.dashboardApp.querySelector('form');
+            for (const fn of form.events.submit) fn({ preventDefault() {} }); await settle();
+            const save = profileCalls(h)[1];
+            expect(save.init.method).toBe('POST');
+            expect(JSON.parse(save.init.body)).toEqual({ expectedRevision: 4, website: '', industry: 'retail', region: '', sizeBand: '' });
+            await h.reply(h.requests.indexOf(save), 409, { code: 'organisation_profile_conflict', profile: stored({ revision: 5, region: 'otago' }) });
+            expect(byId(h, 'organisation-profile-status').textContent).toMatch(/^Someone else changed these details/);
+            expect(byId(h, 'organisation-profile-region').value).toBe('otago');
+            for (const fn of form.events.submit) fn({ preventDefault() {} }); await settle();
+            const denied = profileCalls(h)[2];
+            expect(JSON.parse(denied.init.body).expectedRevision).toBe(5);
+            await h.reply(h.requests.indexOf(denied), 403, { code: 'organisation_profile_access_denied' });
+            expect(byId(h, 'organisation-profile-status').textContent).toBe('Only an organisation admin can change these details.');
+        });
     });
     test('an operator session cannot carry the field', async () => {
         const session = account({ purpose: 'operator_dashboard' }); delete session.accountType;

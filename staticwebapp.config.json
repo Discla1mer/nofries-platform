@@ -845,6 +845,19 @@
       }
     },
     {
+      "route": "/api/dashboard/organisation-profile",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "allowedRoles": [
+        "anonymous"
+      ],
+      "headers": {
+        "Cache-Control": "private, no-store, max-age=0"
+      }
+    },
+    {
       "route": "/api/dashboard/logout",
       "methods": [
         "POST"

@@ -502,7 +502,69 @@
             const requests = element('a', '', 'Request a data export or deletion');
             requests.href = '/privacy.html#requests';
             privacy.append(requests);
-            main.append(account, notifications, privacy, panel('Organisation profile', model.context.displayName));
+            const organisation = panel('Organisation profile', model.context.displayName);
+            main.append(account, notifications, privacy, organisation);
+            if (options.organisationProfile && typeof options.organisationProfile.read === 'function') renderOrganisationProfile(organisation, options.organisationProfile);
+        }
+        // #608: the organisation's website, industry, region and size. The
+        // server decides who may save (organisation admins); a stale form gets
+        // the current details back instead of overwriting them. Nothing about
+        // the website is fetched.
+        function renderOrganisationProfile(section, port) {
+            const status = element('p', 'dashboard-muted', 'Loading your organisation details…');
+            status.setAttribute('role', 'status'); status.id = 'organisation-profile-status';
+            section.append(status);
+            let revision = 0;
+            const fieldsByKey = {};
+            function show(profile) {
+                revision = profile.revision;
+                fieldsByKey.website.value = profile.website ? profile.website.replace(/^https:\/\//, '').replace(/\/$/, '') : '';
+                fieldsByKey.industry.value = profile.industry || '';
+                fieldsByKey.region.value = profile.region || '';
+                fieldsByKey.sizeBand.value = profile.sizeBand || '';
+            }
+            function select(key, label, list) {
+                const wrap = element('p', 'dashboard-field');
+                const caption = element('label', '', label); caption.htmlFor = 'organisation-profile-' + key;
+                const input = element('select'); input.id = caption.htmlFor; input.name = key;
+                const none = element('option', '', 'Not set'); none.value = ''; input.append(none);
+                list.forEach(function (item) { const option = element('option', '', item.label); option.value = item.code; input.append(option); });
+                fieldsByKey[key] = input; wrap.append(caption, input); return wrap;
+            }
+            port.read().then(function (profile) {
+                if (disposed || !main.contains(section)) return;
+                const form = element('form', 'dashboard-profile-form'); form.noValidate = true;
+                const site = element('p', 'dashboard-field');
+                const siteLabel = element('label', '', 'Website'); siteLabel.htmlFor = 'organisation-profile-website';
+                const siteInput = element('input'); siteInput.id = siteLabel.htmlFor; siteInput.name = 'website';
+                siteInput.type = 'text'; siteInput.setAttribute('inputmode', 'url'); siteInput.setAttribute('autocomplete', 'url');
+                siteInput.setAttribute('placeholder', 'example.co.nz'); siteInput.setAttribute('aria-describedby', 'organisation-profile-website-hint');
+                const hint = element('span', 'dashboard-muted', 'Your public website address. We don\'t visit it.'); hint.id = 'organisation-profile-website-hint';
+                fieldsByKey.website = siteInput; site.append(siteLabel, siteInput, hint);
+                form.append(site, select('industry', 'Industry', profile.choices.industries),
+                    select('region', 'Region', profile.choices.regions), select('sizeBand', 'Size', profile.choices.sizeBands));
+                const save = element('button', 'dashboard-button', 'Save organisation details'); save.type = 'submit';
+                form.append(save);
+                form.addEventListener('submit', function (event) {
+                    event.preventDefault();
+                    if (save.disabled) return;
+                    save.disabled = true; status.textContent = 'Saving…';
+                    port.save({ expectedRevision: revision, website: fieldsByKey.website.value.trim(), industry: fieldsByKey.industry.value,
+                        region: fieldsByKey.region.value, sizeBand: fieldsByKey.sizeBand.value }).then(function (result) {
+                        if (disposed) return;
+                        if (result.status === 'saved') { show(result.profile); status.textContent = 'Organisation details saved.'; }
+                        else if (result.status === 'conflict') { show(result.profile); status.textContent = 'Someone else changed these details. The latest are shown; check them and save again.'; }
+                        else if (result.status === 'denied') status.textContent = 'Only an organisation admin can change these details.';
+                        else status.textContent = 'Check the website: use a public address such as example.co.nz.';
+                    }, function () {
+                        if (!disposed) status.textContent = 'Your details weren\'t saved. Try again.';
+                    }).finally(function () { save.disabled = false; });
+                });
+                status.remove(); section.append(form, status);
+                show(profile); status.textContent = '';
+            }, function () {
+                if (!disposed) status.textContent = 'Your organisation details could not be loaded. Refresh to try again.';
+            });
         }
         function renderOverview() {
             if (options.demoGuide === true) {
