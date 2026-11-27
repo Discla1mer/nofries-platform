@@ -1154,6 +1154,26 @@ describe('questionnaire draft progress and unanswered navigation', () => {
         } finally { gate.resolve(); ui.controller.destroy(); }
     });
 
+    test('answers tapped while an autosave is in flight are all saved (#699 M4-04)', async () => {
+        const h = await backend(), gate = deferred(); let held = true;
+        const client = { ...h.client, save: async (command, settings) => { if (held) await gate.promise; return h.client.save(command, settings); } };
+        const ui = await createInUi(h, { client, autosaveIdleMs: 40 }), questions = metadata().questions;
+        try {
+            choose(ui, 0, 'yes'); await until(() => h.calls.length > 0 && ui.root.querySelector('.ncsc-status').textContent.startsWith('Saving'));
+            choose(ui, 1, 'no'); choose(ui, 2, 'partial');
+            const tile = byId(ui, `ncsc-answer-${questions[2].id}-partial`), next = control(ui, 'Next question');
+            expect(tile.checked).toBe(true);
+            held = false; gate.resolve();
+            await until(() => ui.root.textContent.includes('Your progress is saved.') && !ui.root.textContent.includes('Newer changes are not saved yet'), 4000);
+            // The confirmed save did not rebuild the question, so a tap in progress lands.
+            expect(byId(ui, `ncsc-answer-${questions[2].id}-partial`)).toBe(tile); expect(control(ui, 'Next question')).toBe(next);
+            expect(ui.root.querySelector('.ncsc-draft-observations').textContent).toContain('3 of 14 responses saved');
+            const saved = h.records.at(-1).payload.responses;
+            const option = id => saved.find(item => item.itemId === id)?.optionId;
+            expect([option(questions[0].id), option(questions[1].id), option(questions[2].id)]).toEqual(['yes', 'no', 'partial']);
+        } finally { held = false; gate.resolve(); ui.controller.destroy(); }
+    });
+
     test('the focused function step survives an autosave repaint', async () => {
         const h = await backend(), gate = deferred();
         const client = { ...h.client, save: async (command, settings) => { await gate.promise; return h.client.save(command, settings); } };
@@ -1177,7 +1197,9 @@ describe('questionnaire draft progress and unanswered navigation', () => {
         oldJump.click(); oldNext.click(); oldPrevious.click(); expect(currentQuestion(ui)).toBe(1);
         control(ui, 'Save progress').click(); await until(() => ui.root.textContent.includes('Your progress is saved.'));
         const before = ui.root.textContent;
-        expect(control(ui, metadata().domains.at(-1).title)).not.toBe(oldStep); oldStep.click(); oldJump.click(); oldNext.click(); oldPrevious.click();
+        // A quiet autosave keeps the stepper mounted (#699), so the step control is
+        // still the live one; question controls replaced by answering stay inert.
+        expect(control(ui, metadata().domains.at(-1).title)).toBe(oldStep); oldJump.click(); oldNext.click(); oldPrevious.click();
         expect(currentQuestion(ui)).toBe(1); expect(ui.root.textContent).toBe(before); ui.controller.destroy();
     });
 

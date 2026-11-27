@@ -800,6 +800,7 @@
         const requests = new Set();
         let disposed = false;
         let epoch = 0;
+        let renderedErrorKey = '[]';
         let editGeneration = 0;
         let selected = null;
         let acknowledged = null;
@@ -1566,6 +1567,20 @@
         }
         // Counts and navigation from acknowledged answers only. Never evaluate a
         // draft, infer a risk ranking, or reuse another assessment's baseline.
+        // Replace the saved-observations panel in place after a quiet save,
+        // keeping its open state; the question being answered is not rebuilt.
+        function refreshDraftObservations() {
+            const old = root.querySelector('.ncsc-draft-observations');
+            if (!old || !acknowledged || acknowledged.status === 'submitted' || !content.contains(old)) return;
+            const open = old.open && old.dataset.assessmentId === acknowledged.assessmentId;
+            const focused = old.contains(doc.activeElement) ? doc.activeElement.id : '';
+            renderDraftObservations(open);
+            const fresh = content.children[content.children.length - 1];
+            if (!fresh || fresh === old || fresh.className !== old.className) return;
+            content.removeChild(fresh);
+            old.replaceChildren(...Array.from(fresh.children)); old.open = open;
+            if (focused) { const target = old.querySelector('[id="' + focused + '"]'); if (target) target.focus({ preventScroll: true }); }
+        }
         function renderDraftObservations(expanded) {
             const panel = node('details', 'ncsc-guidance ncsc-draft-observations');
             panel.dataset.assessmentId = acknowledged.assessmentId; panel.open = expanded;
@@ -2345,7 +2360,11 @@
                     else { input.removeAttribute('aria-invalid'); input.setAttribute('aria-describedby', SCOPE_DESCRIBED_BY); }
                 }
             }
-            if (questionRegion && acknowledged) renderQuestion();
+            // Repaint the question only when its errors change; a clean check
+            // before each autosave must not rebuild the tiles being tapped (#699).
+            const errorKey = JSON.stringify(errors);
+            if (questionRegion && acknowledged && (errorKey !== renderedErrorKey || focus)) renderQuestion();
+            renderedErrorKey = errorKey;
             if (focus && errors.length) errorBox.focus();
         }
         function planBatches(entries) {
@@ -2516,7 +2535,15 @@
                 if (live(expected)) {
                     const focusFailure = failed && (doc.activeElement === heading || doc.activeElement === status || doc.activeElement === saveStatus) && !leave && view !== 'denied';
                     const restoreSave = operation.restoreSave && doc.activeElement === saveStatus;
-                    busy = false; render();
+                    busy = false;
+                    // A confirmed background save changes nothing on the question
+                    // being answered, so update the status and progress in place.
+                    // Rebuilding the question here replaced its answer tiles and
+                    // Next button mid-tap on slow phones, and the tap was lost
+                    // (#699 M4-04).
+                    const quiet = !failed && command.action === 'save' && !pending && !conflict && !operation.uncertain &&
+                        view === 'assessment' && !reviewing && !leave && !submitPrompt && !errors.length && questionRegion && root.contains(questionRegion);
+                    if (quiet) { updateStatus(); updateQuestionNavigation(); refreshDraftObservations(); } else render();
                     if (!failed && command.action === 'save' && !pending && !conflict && dirtyEntries().length) scheduleAutosave(flushQueued ? 0 : undefined);
                     else flushQueued = false;
                     if (restoreSave && !pending && !conflict) { const save = root.querySelector('[id="ncsc-save"]'); if (save && !save.disabled) save.focus({ preventScroll: true }); }
