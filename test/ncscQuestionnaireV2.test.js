@@ -149,7 +149,7 @@ describe('v2 results in the questionnaire', () => {
         expect(panel.textContent).toContain('Saved answer: Sometimes, but not written down or checked. Weight: 2.');
         const report = questionnaire.questionnaireAnswers(assessment, V2());
         const output = panel.querySelector('.ncsc-questionnaire-answers');
-        expect(output.querySelectorAll('li')).toHaveLength(11);
+        expect(output.querySelectorAll('li')).toHaveLength(12);
         expect(output.querySelector('textarea').value).toBe(report.text);
         expect(output.textContent).toContain(report.footer);
         // 9 graded part-credit answers and 5 No: 14 gaps to fix, 2 "I don't know" to check.
@@ -158,17 +158,24 @@ describe('v2 results in the questionnaire', () => {
     });
 
     test.each([['yes', 'Yes'], ['partly', 'Partly'], ['ad_hoc', 'Partly'], ['no', 'No'],
-        ['unknown', 'Not answered'], ['not_applicable', 'Not answered']])('insurer answers use the v2 source question and its own option: %s', (saved, expected) => {
+        ['unknown', 'Not confirmed'], ['not_applicable', 'Marked not applicable']])('insurer answers use the v2 source question and its own option: %s', (saved, expected) => {
         const md = V2(), assessment = { status: 'submitted', profileRef: md.profileRef,
             scopePopulation: { description: 'Fictional office' }, responses: md.questions.map(q => ({ itemId: q.id, optionId: saved })) };
         const report = questionnaire.questionnaireAnswers(assessment, md), byId = Object.fromEntries(report.items.map(row => [row.id, row]));
-        for (const id of ['mfa', 'backup-storage', 'restore-tests', 'training', 'incident-plan', 'admin-rights', 'payment-checks', 'supplier-access', 'email-protection']) {
+        for (const id of ['mfa', 'backup-storage', 'restore-tests', 'patch-speed', 'training', 'incident-plan', 'admin-rights', 'payment-checks', 'assets', 'supplier-access', 'email-protection']) {
             expect(byId[id].answer).toBe(expected);
             expect(byId[id].question).toMatch(/\?$/);
             if (saved === 'ad_hoc') expect(byId[id].basis).toContain('Sometimes, but not written down or checked');
         }
-        expect(byId['patch-speed'].answer).toBe('Not answered'); // PA does not ask for a deadline.
-        expect(byId.endpoint.answer).toBe('Not answered'); // Alerts do not attest EDR coverage.
+        // #702: patch speed answers from "kept up to date" and says the deadline still needs confirming;
+        // v2 has no EDR question, so EDR says so rather than reading as a blank.
+        if (!['unknown', 'not_applicable'].includes(saved)) expect(byId['patch-speed'].basis).toContain("did not ask for your insurer's deadline");
+        expect(byId['patch-speed'].question).toContain('deadline');
+        expect(byId.endpoint.answer).toBe('Not covered by this check');
+        expect(byId.endpoint.basis).toBe('This check does not ask about this. Confirm with your IT provider before answering.');
+        if (saved === 'unknown') expect(byId.assets.basis).toBe("Your saved answer: I don't know. Confirm this before answering.");
+        // The copied text is the answers only; coaching stays on screen.
+        expect(report.text).not.toContain('To answer Yes'); expect(report.text).not.toContain('Check the exact coverage');
         expect(byId['restore-tests'].question).toContain('three months');
         expect(byId['backup-storage'].question).toContain('out of reach of ransomware');
     });
@@ -185,7 +192,9 @@ describe('v2 results in the questionnaire', () => {
         expect(rows().mfa).toBe('Not answered');
         a.responses[0].optionId = 'yes';
         a.profileRef = { ...md.profileRef, sourceCatalogueSha256: 'a'.repeat(64) };
-        expect(Object.values(rows()).every(answer => answer === 'Not answered')).toBe(true);
+        const { endpoint, ...others } = rows();
+        expect(endpoint).toBe('Not covered by this check');
+        expect(Object.values(others).every(answer => answer === 'Not answered')).toBe(true);
     });
 
     test('provider and board summaries group v2 answers by credit, with each answer\'s own label', async () => {

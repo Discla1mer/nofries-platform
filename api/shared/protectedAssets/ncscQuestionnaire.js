@@ -318,14 +318,20 @@
                 'Ask accounts for a payment-change record showing the call to a known number or another independent check.']
         ];
         if (v2) definitions.push(
+            // #702: every v2 answer reaches the pack, including the asset list.
+            ['assets', '', 'NF-NCSC-MCSS-AI-01-Q1', true, '', 'Ask IT for the current list of important devices, software, cloud apps and data, with owners.'],
             ['supplier-access', '', 'NF-NCSC-CC-SU-01-Q1', true, '', 'Get the supplier access list, sign-in settings and written breach-notification terms.'],
             ['email-protection', '', 'NF-NCSC-CC-EM-01-Q1', true, '', 'Ask your email provider for the domain protection and phishing filter settings.']
         );
         const items = definitions.map(function ([id, question, source, allowPartial, action, evidence]) {
             if (v2 && id === 'backup-storage') source = 'NF-NCSC-MCSS-DR-01-Q1';
             if (v2 && id === 'restore-tests') source = 'NF-NCSC-MCSS-DR-01-Q2';
+            // #702: v2 asks whether systems are kept up to date, not the insurer's
+            // deadline; answer from it and say the deadline still needs confirming.
+            const deadline = v2 && id === 'patch-speed';
+            if (deadline) source = 'NF-NCSC-MCSS-PA-01-Q1';
             const sourceQuestion = source && metadata.questions.find(item => item.id === source);
-            if (v2 && sourceQuestion) {
+            if (v2 && sourceQuestion && !deadline) {
                 question = sourceQuestion.prompt;
                 action = sourceQuestion.guidance.startingActions[0];
                 allowPartial = true;
@@ -335,19 +341,28 @@
             const saved = responses.length === 1 ? responses[0].optionId : null;
             const option = v2 ? (sourceQuestion && sourceQuestion.responseOptionIds.includes(saved)
                 ? ({ partly: 'partial', ad_hoc: 'partial' }[saved] || saved) : null) : saved;
-            const answer = option === 'yes' ? 'Yes' : option === 'no' ? 'No' : option === 'partial' && allowPartial ? 'Partly' : 'Not answered';
-            const basis = !source ? 'This assessment does not ask for this detail.'
+            if (deadline) allowPartial = true;
+            const notCovered = v2 && !source;
+            const unknown = v2 && option === 'unknown';
+            const answer = option === 'yes' ? 'Yes' : option === 'no' ? 'No' : option === 'partial' && allowPartial ? 'Partly'
+                : notCovered ? 'Not covered by this check' : unknown ? 'Not confirmed' : v2 && option === 'not_applicable' ? 'Marked not applicable' : 'Not answered';
+            const savedLabel = v2 && saved && metadata.responseOptions.find(item => item.id === saved);
+            const basis = notCovered ? 'This check does not ask about this. Confirm with your IT provider before answering.'
+                : deadline && savedLabel ? 'From your answer to "kept up to date": ' + savedLabel.label + '. This check did not ask for your insurer\'s deadline, so confirm it.'
+                : unknown ? 'Your saved answer: I don\'t know. Confirm this before answering.'
+                : !source ? 'This assessment does not ask for this detail.'
                 : option === 'partial' && !allowPartial ? 'The broader answer is Partial; it does not confirm this specific detail.'
                 : option === 'not_applicable' ? 'Marked Not applicable in the assessment; this is not confirmation of the control.'
                 : answer === 'Not answered' ? 'The saved answers do not confirm this detail.'
-                : v2 ? 'Your saved answer: ' + metadata.responseOptions.find(item => item.id === saved).label + '. Check the exact coverage before using it.'
+                : v2 ? 'Your saved answer: ' + metadata.responseOptions.find(item => item.id === saved).label + '.'
                 : 'Based on your saved ' + (option === 'partial' ? 'Partial' : answer) + ' answer; check the exact coverage before using it.';
             return { id: id, question: question, answer: answer, basis: basis, action: 'To answer Yes: ' + action,
                 evidence: answer === 'Yes' ? '' : 'Evidence: ' + evidence };
         });
         const scope = 'Scope: ' + assessment.scopePopulation.description;
-        const lines = [title, scope, ...items.map(item => item.question + '\nSuggested answer: ' + item.answer + '\n' + item.basis + '\n' + item.action +
-            (item.evidence ? '\n' + item.evidence : '')), footer];
+        // v2 copies the answers only; "To answer Yes" and evidence stay on screen (#702).
+        const lines = [title, scope, ...items.map(item => item.question + '\nSuggested answer: ' + item.answer + '\n' + item.basis +
+            (v2 ? '' : '\n' + item.action + (item.evidence ? '\n' + item.evidence : ''))), footer];
         return { title: title, scope: scope, items: items, footer: footer, text: lines.join('\n\n') };
     }
     // Copies with the clipboard when the browser allows it; otherwise selects
