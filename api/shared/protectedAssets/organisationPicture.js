@@ -836,7 +836,7 @@
             handoff.append(node('summary', '', 'Copy or print a summary'));
             const label = node('label', '', 'Copy this summary into an email or document');
             const input = node('textarea', 'ncsc-textarea'); input.id = id + '-summary'; label.htmlFor = input.id;
-            input.readOnly = true; input.rows = 8; input.value = questionnaire.providerSummary(detail, selectedMetadata()).text;
+            input.readOnly = true; input.rows = 8; input.value = questionnaire.providerSummary(detail, selectedMetadata(), displayedGaps).text;
             // The field scrolls on screen, so paper gets the full text instead.
             const printed = node('pre', 'picture-summary-print', input.value); printed.setAttribute('aria-hidden', 'true');
             const status = node('p', 'dashboard-muted'); status.setAttribute('role', 'status');

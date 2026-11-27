@@ -44,3 +44,18 @@ test('the board summary opens with the top gaps, in order, before the status gro
     expect(text.indexOf('In place:')).toBeGreaterThan(text.indexOf('2. Least Privilege'));
     expect(questionnaire.boardSummary(assessment, metadata).text).not.toContain('What needs attention first');
 });
+
+test('the IT-provider summary leads with the on-screen top gaps on scoring v2 (#441)', () => {
+    const { createNcscQuestionnaireMetadataV2 } = require('../api/shared/ncscQuestionnaireMetadata');
+    const metadata = createNcscQuestionnaireMetadataV2();
+    const ids = metadata.questions.map(question => question.id);
+    const pick = code => ids.find(id => id.includes('-' + code + '-01-Q1'));
+    const answers = new Map([[pick('RM'), 'no'], [pick('PA'), 'partly'], [pick('SU'), 'no'], [pick('PM'), 'ad_hoc']]);
+    const assessment = { scopePopulation: { description: 'Synthetic scope' }, submission: { submittedAt: '2026-11-27T00:00:00.000Z' },
+        responses: ids.map(itemId => ({ itemId, optionId: answers.get(itemId) || (itemId.includes('MF-01-Q2') ? 'mfa_key' : 'yes') })) };
+    const control = id => metadata.controls.find(item => item.id === metadata.questions.find(q => q.id === id).controlId).title;
+    const gaps = [{ itemId: pick('SU') }, { itemId: pick('PA') }];
+    const order = questionnaire.providerSummary(assessment, metadata, gaps).items.map(item => item.title.slice(0, item.title.lastIndexOf(' — ')));
+    expect(order.slice(0, 2)).toEqual([control(pick('SU')), control(pick('PA'))]);
+    expect(order.slice(2)).toEqual([control(pick('RM')), control(pick('PM'))]);
+});
