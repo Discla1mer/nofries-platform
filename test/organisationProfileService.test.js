@@ -40,7 +40,11 @@ const body = values => ({ expectedRevision: 0, website: '', industry: '', region
 
 test('an organisation with no profile reads as revision 0 with every field empty', async () => {
     const h = harness();
-    expect(await h.run()).toEqual({ schemaVersion: 1, revision: 0, website: null, industry: null, region: null, sizeBand: null, updatedAt: null });
+    const read = await h.run();
+    expect(read).toMatchObject({ schemaVersion: 1, revision: 0, website: null, industry: null, region: null, sizeBand: null, updatedAt: null });
+    // The closed lists travel with a read so the form offers exactly what is accepted.
+    expect(read.choices.industries[0]).toEqual({ code: 'agriculture', label: 'Farming, forestry and fishing' });
+    expect(read.choices.regions).toHaveLength(17); expect(read.choices.sizeBands).toHaveLength(6);
     expect(h.events).toEqual([]);
 });
 

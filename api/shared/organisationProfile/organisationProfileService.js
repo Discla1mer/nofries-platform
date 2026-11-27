@@ -12,6 +12,9 @@ const { requireTenantRequestContext } = require('../appLifecycle/tenantRequestCo
 const { INDUSTRIES, REGIONS, SIZE_BANDS, normaliseWebsite, choice } = require('./profileChoices');
 
 const FIELDS = Object.freeze(['website', 'industry', 'region', 'sizeBand']);
+// A read also carries the closed lists, so the Settings form shows the same
+// choices the server and the 0035 CHECKs accept.
+const CHOICES = Object.freeze({ industries: INDUSTRIES, regions: REGIONS, sizeBands: SIZE_BANDS });
 const MAX_REVISION = 2147483647;
 
 class OrganisationProfileError extends Error {
@@ -73,7 +76,7 @@ async function organisationProfile({ database, context: contextInput, clock, aud
     const scope = context.scope;
     return database.withTenantTransaction(scope.tenantId, async tx => {
         const current = await readProfile(tx, scope);
-        if (!command) return current;
+        if (!command) return Object.freeze({ ...current, choices: CHOICES });
         if (command.expectedRevision !== current.revision) fail('organisation_profile_conflict', 409, current);
         // Saving the same values again changes nothing and writes no audit event.
         if (current.revision > 0 && sameValues(current, command)) return current;

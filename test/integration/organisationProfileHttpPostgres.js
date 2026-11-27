@@ -35,7 +35,7 @@ module.exports = function registerOrganisationProfileHttpPostgres({ ncscHttpSetu
             const older = await h.get('session').set('X-NoFries-Dashboard-Capabilities', CAPABILITIES.replace(' organisation-profile-v1', '')); httpJson(older, 200);
             expect(older.body).not.toHaveProperty('organisationProfileAvailable');
             const first = await h.get(ROUTE, h.generation); httpJson(first, 200);
-            expect(first.body).toEqual(empty);
+            expect(first.body).toMatchObject(empty); expect(first.body.choices.sizeBands.map(item => item.code)).toEqual(['just-me', '2-5', '6-20', '21-50', '51-200', '200-plus']);
 
             const created = await save(h, { expectedRevision: 0, website: 'Example.co.nz/about', industry: 'retail', region: 'auckland', sizeBand: '6-20' });
             httpJson(created, 200);
@@ -70,7 +70,7 @@ module.exports = function registerOrganisationProfileHttpPostgres({ ncscHttpSetu
         test('a viewer can read the profile but cannot save it', async () => {
             const h = await ncscHttpSetup({ customerProvider: true, organisationProfileEnabled: true, role: 'viewer' });
             const read = await h.get(ROUTE, h.generation); httpJson(read, 200);
-            expect(read.body).toEqual(empty);
+            expect(read.body).toMatchObject(empty);
             httpJson(await save(h, { expectedRevision: 0, website: '', industry: 'retail', region: '', sizeBand: '' }), 403, 'organisation_profile_access_denied');
             expect(await stored(h)).toEqual([]);
             expect(await audits(h)).toEqual([]);
