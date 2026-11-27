@@ -137,3 +137,24 @@ test('every item belongs to one line of work with a short map label', () => {
     expect(html).toContain('<script src="/js/roadmap.js" defer></script>');
     expect(html).not.toMatch(/ style="/);
 });
+
+test('NCSC figures: latest quarter charted, survey population stated exactly, framework not credited with a question count (#672)', () => {
+    const text = name => read(name).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
+    const roadmap = read('roadmap.html');
+    const chart = roadmap.match(/aria-label="Reported direct financial loss: ([^"]+)"/)[1].split(', ');
+    // A rolling two years of NCSC quarterly reports, newest last. Add each new quarter here and in the chart.
+    expect(chart).toEqual(['Q4 24 NZ$6.8 million', 'Q1 25 NZ$7.8 million', 'Q2 25 NZ$5.7 million', 'Q3 25 NZ$12.4 million',
+        'Q4 25 NZ$3.2 million', 'Q1 26 NZ$5.6 million', 'Q2 26 NZ$2.7 million', 'Q3 26 NZ$5.9 million']);
+    expect(roadmap.match(/class="roadmap-bar-hi"[^>]*\/><text[^>]*>([^<]+)</)[1]).toBe('$5.9m');
+    expect(roadmap).toContain('href="https://www.ncsc.govt.nz/insights-and-research/insights-reports/"');
+    expect(text('roadmap.html')).toContain('quarterly reports for Oct–Dec 2024 to Jul–Sep 2026');
+    for (const name of ['roadmap.html', 'board.html', 'invoice-scams.html']) {
+        const page = text(name);
+        expect([name, /373 businesses/.test(page)]).toEqual([name, false]);
+        expect([name, /373 (?:SME )?IT or operational decision makers/.test(page)]).toEqual([name, true]);
+        expect([name, /up to 49 full-time staff/.test(page)]).toEqual([name, true]);
+        expect([name, /small businesses (?:say|that say)|small businesses, 2026/.test(page)]).toEqual([name, false]);
+    }
+    for (const name of ['roadmap.html', 'index.html', 'pricing.html', 'sample-result.html'])
+        expect([name, /Framework\s*:\s*five functions, \d+ questions/.test(text(name))]).toEqual([name, false]);
+});
