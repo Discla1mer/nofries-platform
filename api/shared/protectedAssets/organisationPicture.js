@@ -690,10 +690,12 @@
             if (trend.total === 1) {
                 section.append(node('p', '', trend.otherProfiles ? 'This is the only submitted assessment with this set of questions so far. Another submitted assessment with the same questions is needed to compare saved results and answer coverage.'
                     : 'This is the only submitted assessment so far. Another submitted assessment is needed to compare saved results and answer coverage.'));
-                // #719: say what a second assessment is for and how to start one.
-                section.append(node('p', 'dashboard-muted', 'A second assessment shows whether the gaps you worked on have closed. Most small businesses repeat the check every six to twelve months, or after a big change such as a new IT provider.'));
+                // #719: say what a second assessment is for and where to start one. With a
+                // saved assessment the host opens the assessment list, not a blank form,
+                // so the button is named for where it goes.
+                section.append(node('p', 'dashboard-muted', 'A second assessment shows whether the gaps you worked on have closed. Most small businesses repeat the check every six to twelve months, or after a big change such as a new IT provider. You can start another from your assessments.'));
                 if (typeof options.openCyber === 'function') {
-                    const token = epoch, again = button('Start a new assessment', () => { if (live(token)) options.openCyber(undefined, { startNew: true }); });
+                    const token = epoch, again = button('Go to your assessments', () => { if (live(token)) options.openCyber(undefined); });
                     again.classList.add('dashboard-button-secondary'); section.append(again);
                 }
                 if (after !== null) section.append(node('p', 'dashboard-muted', 'Other saved assessments may not be loaded yet. Load more to include them.'));

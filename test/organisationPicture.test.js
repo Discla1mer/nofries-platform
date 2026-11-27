@@ -1143,8 +1143,10 @@ test('a single submitted assessment explains that there is nothing to compare ye
     assert.equal(section.querySelectorAll('button').length, 0);
     const opened = [];
     const linked = setup({ client: trendClient([only, draft]).client, options: { initialAssessmentId: only.assessmentId, openCyber: (...args) => opened.push(args) } }); await flush();
-    const again = trendSection(linked).querySelectorAll('button').find(item => item.textContent === 'Start a new assessment');
-    again.click(); assert.deepEqual(opened, [[undefined, { startNew: true }]]);
+    // The host opens the saved-assessment list here, so the button says so.
+    const again = trendSection(linked).querySelectorAll('button').find(item => item.textContent === 'Go to your assessments');
+    again.click(); assert.deepEqual(opened, [[undefined]]);
+    assert.match(trendSection(linked).textContent, /You can start another from your assessments\./);
     linked.controller.destroy();
     assert.equal(section.querySelectorAll('button').length, 0);
     assert.equal(section.querySelector('table'), null);
