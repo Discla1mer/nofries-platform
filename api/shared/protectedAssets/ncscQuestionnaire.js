@@ -248,14 +248,14 @@
             entries.forEach(function (entry) {
                 const question = entry.question, optionId = entry.group;
                 const control = metadata.controls.find(function (item) { return item.id === question.controlId; });
-                const action = optionId === 'unknown' ? 'Ask your IT provider to check what is in place.' : optionId === 'not_applicable' ? 'Confirm with your IT provider whether this applies to your business.' : question.smallBusiness && question.smallBusiness.checks.join(' ') || question.guidance && question.guidance.startingActions && question.guidance.startingActions[0] || 'Agree the next improvement with your IT provider.';
+                const action = optionId === 'unknown' ? 'Not sure? No Fries can check what is in place with you.' : optionId === 'not_applicable' ? 'Not sure this applies? No Fries can confirm it with you.' : question.smallBusiness && question.smallBusiness.checks.join(' ') || question.guidance && question.guidance.startingActions && question.guidance.startingActions[0] || 'Talk to No Fries about the next improvement.';
                 const ownerStart = ['no', 'partial'].includes(optionId) && /^NF-NCSC-MCSS-(RM|SA|AI|RP)-01-Q1$|^NF-NCSC-CC-SV-01-Q1$/.test(question.id);
                 items.push({ title: (control ? control.title : question.prompt) + ' — ' + labels.get(optionOf(question.id)), action: action,
-                    owner: ownerStart ? 'You can start this with your team.' : 'Ask your IT provider to help with this.' });
+                    owner: ownerStart ? 'You can start this with your team.' : '' });
             });
         });
         const lines = ['Cyber security assessment', 'Scope: ' + assessment.scopePopulation.description, 'Submitted: ' + localDate(assessment.submission.submittedAt), 'Self-reported gaps; not a risk ranking or certification.'];
-        return { items: items, text: lines.concat(items.map(function (item) { return item.title + ': ' + item.owner + ' ' + item.action; })).join('\n') };
+        return { items: items, text: lines.concat(items.map(function (item) { return item.title + ': ' + (item.owner ? item.owner + ' ' : '') + item.action; })).join('\n') };
     }
     // Plain-text summary of a submitted assessment for a board or insurer
     // (#441): what is in place, partly in place, not in place and not yet
@@ -385,7 +385,7 @@
             const answer = option === 'yes' ? 'Yes' : option === 'no' ? 'No' : option === 'partial' && allowPartial ? 'Partly'
                 : notCovered ? 'Not covered by this check' : unknown ? 'Not confirmed' : v2 && option === 'not_applicable' ? 'Marked not applicable' : 'Not answered';
             const savedLabel = v2 && saved && metadata.responseOptions.find(item => item.id === saved);
-            const basis = notCovered ? 'This check does not ask about this. Confirm with your IT provider before answering.'
+            const basis = notCovered ? 'This check does not ask about this. Confirm it before answering.'
                 : deadline && savedLabel ? 'From your answer to "kept up to date": ' + savedLabel.label + '. This check did not ask for your insurer\'s deadline, so confirm it.'
                 : unknown ? 'Your saved answer: I don\'t know. Confirm this before answering.'
                 : !source ? 'This assessment does not ask for this detail.'
@@ -531,6 +531,7 @@
         section.append(node('p', 'dashboard-muted', v2
             ? 'Start with the first gap below. Gaps are ordered by how much each question counts and how far your answer is from fully in place. "I don\'t know" counts as a gap. This is a No Fries planning list from your answers, not an official NCSC priority.'
             : 'Start with the first gap below. Account sign-in checks, updates, backups and payment checks come first. The order is a guide based on your answers.'));
+        section.append(node('p', 'picture-gap-help', GAP_HELP));
         const list = node('ol', 'picture-top-gaps-list');
         gaps.forEach(gap => {
             const item = node('li', 'picture-top-gap'); item.dataset.gapItem = gap.itemId;
@@ -539,8 +540,10 @@
             // Lead with the first specific check, not the restated question (#441 RANGI-13).
             next.append(node('strong', '', 'What to do next: '), node('span', '', gap.firstCheck));
             const ownerStart = /^NF-NCSC-MCSS-(RM|SA|AI|RP)-01-Q1$|^NF-NCSC-CC-SV-01-Q1$/.test(gap.itemId);
-            item.append(node('h4', '', gap.title), node('p', 'dashboard-muted', 'Your answer: ' + gap.answer),
-                node('p', 'picture-gap-owner', ownerStart ? 'You can start this with your team.' : 'Ask your IT provider to help with this.'), why, next);
+            item.append(node('h4', '', gap.title), node('p', 'dashboard-muted', 'Your answer: ' + gap.answer));
+            // #714: the help line shows once above the list, not on every card.
+            if (ownerStart) item.append(node('p', 'picture-gap-owner', 'You can start this with your team.'));
+            item.append(why, next);
             if (controls) item.append(...controls(gap));
             list.append(item);
         });
@@ -566,6 +569,8 @@
         supplier: 'Use any gaps behind your questionnaire answers to choose an improvement. For example, review access to customer files and keep the updated access list as evidence for your next answer.',
         board: 'Choose a practical improvement from your top gaps. The written progress summary can show your board what changed and what still needs attention.'
     };
+    // Owner direction (28 Nov 2026): point people to No Fries for fixing gaps.
+    const GAP_HELP = 'No Fries can help you fix any of these.';
     function managedSecurityOffer(node, gated, win, stillCurrent, campaign) {
         const help = node('div', 'picture-next-steps-help'); help.hidden = true;
         const link = node('a', 'dashboard-button', 'Fix these with No Fries'); link.href = '/contact.html?service=managed_security_90';
@@ -1726,7 +1731,7 @@
                 yes + ' answered Yes (self-reported, not verified).'));
             if (!saved) panel.append(node('p', '', 'No saved answers yet. Observations appear after answers are saved.'));
             [
-                ['Reported gaps', ['no', 'partial'], 'Check what is missing and agree a next step with your team or IT provider.'],
+                ['Reported gaps', ['no', 'partial'], 'Check what is missing and agree a next step with your team or No Fries.'],
                 ['Information to confirm', ['unknown'], 'Ask whoever looks after these systems what is in place.'],
                 ['Applicability to confirm', ['not_applicable'], 'These answers say the question does not apply. Check whether it really is outside this scope. They still count as not yet met.'],
                 ['Not answered in this save', [null], 'Answer these questions, or choose Unknown when you cannot confirm what is in place.']
@@ -2098,10 +2103,10 @@
             const plural = function (n, one, many) { return n + ' ' + (n === 1 ? one : many); };
             // One plain verdict before any percentages. The list follows answer groups, not risk.
             if (toFix || toCheck) section.append(node('p', 'ncsc-verdict', 'You have ' + plural(toFix, 'gap', 'gaps') + ' to fix and ' + plural(toCheck, 'answer', 'answers') + ' to check.'));
-            if (toCheck) section.append(node('p', 'dashboard-muted', 'No IT provider? Ask whoever looks after your computers and accounts, or a local IT support business, to check these with you.'));
+            if (toCheck) section.append(node('p', 'dashboard-muted', 'Not sure who to ask? No Fries can check these with you.'));
             const list = node('ol'), summary = providerSummary(acknowledged, metadata, gaps);
             summary.items.forEach(function (entry) {
-                const item = node('li'); item.append(node('strong', '', entry.title), node('p', 'dashboard-muted', entry.owner), node('p', '', entry.action)); list.append(item);
+                const item = node('li'); item.append(node('strong', '', entry.title)); if (entry.owner) item.append(node('p', 'dashboard-muted', entry.owner)); item.append(node('p', '', entry.action)); list.append(item);
             });
             const followUpCount = list.children.length;
             if (followUpCount) section.append(node('p', '', 'Suggested follow-ups: ' + followUpCount + '. Your top gaps come first, in the same order, then other gaps and answers to check.'));
@@ -2117,8 +2122,8 @@
                 }, 'dashboard-button dashboard-button-secondary');
                 section.append(more);
             }
-            if (!followUpCount) section.append(node('p', '', 'You answered Yes throughout. Check these answers with your IT provider and agree when to review them.'));
-            const handoff = node('details'); handoff.append(node('summary', '', 'Summary to share with your IT provider'));
+            if (!followUpCount) section.append(node('p', '', 'You answered Yes throughout. No Fries can check these answers with you and agree when to review them.'));
+            const handoff = node('details'); handoff.append(node('summary', '', 'Summary to share with whoever is fixing these'));
             const label = node('label', '', 'Copy this summary into an email or document'); label.htmlFor = 'ncsc-provider-summary';
             const input = node('textarea', 'ncsc-textarea'); input.id = label.htmlFor; input.readOnly = true; input.rows = 8; input.value = summary.text; handoff.append(label, input);
             const copied = node('p', 'dashboard-muted'); copied.setAttribute('role', 'status');

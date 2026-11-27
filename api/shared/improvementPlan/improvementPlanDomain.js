@@ -20,7 +20,7 @@ const SUGGESTIONS = Object.freeze({
 // An implementation gap uses the question's own first step from the profile;
 // the login-method question words its step by the method recorded.
 const V2_SUGGESTIONS = Object.freeze({
-    assessment: 'Find out whether this is in place, for example by asking your IT provider, then update your answer.',
+    assessment: 'Find out whether this is in place, for example by asking whoever looks after your IT or No Fries, then update your answer.',
     applicability: 'Check that this really does not apply to your business and record why, or change your answer.',
     evidence: 'Keep a current record that shows this is in place, such as a screenshot of the setting or a note from your IT provider.'
 });
