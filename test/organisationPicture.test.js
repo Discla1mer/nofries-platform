@@ -1240,6 +1240,27 @@ test('the board summary supersedes the previous submission and lists the changed
     dom.controller.destroy();
 });
 
+test('a refused read of the previous submission clears the picture, as Compare does (#733)', async () => {
+    const earlier = submittedAt('assessment-earlier', '2026-09-10T00:00:00.000Z', allResponses('no'));
+    const later = submittedAt('assessment-later', '2026-10-10T00:00:00.000Z', mixedResponses());
+    const { client } = trendClient([earlier, later], { fail: id => id === earlier.assessmentId ? { statusCode: 403 } : null });
+    const dom = setup({ client, options: { initialAssessmentId: later.assessmentId } }); await flush(); await flush();
+    assert.match(dom.root.textContent, /unavailable/);
+    assert.doesNotMatch(dom.root.textContent, /46\.4%|Summary for your board or insurer/);
+    dom.controller.destroy();
+});
+
+test('a failed (not refused) read of the previous submission leaves the summary without the supersedes lines (#733)', async () => {
+    const earlier = submittedAt('assessment-earlier', '2026-09-10T00:00:00.000Z', allResponses('no'));
+    const later = submittedAt('assessment-later', '2026-10-10T00:00:00.000Z', mixedResponses());
+    const { client } = trendClient([earlier, later], { fail: id => id === earlier.assessmentId ? { statusCode: 503 } : null });
+    const dom = setup({ client, options: { initialAssessmentId: later.assessmentId } }); await flush(); await flush();
+    const walk = node => [node, ...node.children.flatMap(walk)];
+    const board = walk(dom.root).find(node => node.tagName === 'TEXTAREA' && /-board-summary$/.test(node.id));
+    assert.ok(board); assert.doesNotMatch(board.value, /supersedes|Changes since/);
+    dom.controller.destroy();
+});
+
 test('a single submission makes no supersedes claim and reads nothing else (#733)', async () => {
     const only = submittedAt('assessment-only', '2026-10-10T00:00:00.000Z', mixedResponses());
     const { client, reads } = trendClient([only]);

@@ -261,6 +261,33 @@ describe('v2 results in the questionnaire', () => {
         } finally { ui.controller.destroy(); }
     });
 
+    test('Results opened directly reads the history once and still supersedes; a refused read denies (#733)', async () => {
+        for (const refuse of [false, true]) {
+            const h = await backend(), laterAnswers = EXAMPLE.slice(); laterAnswers[0] = 'yes';
+            await h.execute(createCommand('assessment-a', 'create-a')); await h.execute(saveCommand('assessment-a', 0, 'save-a', v2Answers(EXAMPLE)));
+            await h.execute(submitCommand('assessment-a', 1, 'submit-a'));
+            h.clock.advance(3600000);
+            await h.execute(createCommand('assessment-b', 'create-b')); await h.execute(saveCommand('assessment-b', 0, 'save-b', v2Answers(laterAnswers)));
+            await h.execute(submitCommand('assessment-b', 1, 'submit-b'));
+            const client = refuse ? { ...h.client, read: async (id, settings) => {
+                if (id === 'assessment-a') { const error = new Error('denied'); error.statusCode = 403; error.code = 'ncsc_access_denied'; throw error; }
+                return h.client.read(id, settings);
+            } } : h.client;
+            const ui = mountUi(h, { client, initialAssessmentId: 'assessment-b' });
+            try {
+                const walk = node => [node, ...node.children.flatMap(walk)];
+                const board = () => walk(ui.root).find(node => node.id === 'ncsc-board-summary');
+                if (!refuse) {
+                    await until(() => board() && board().value.includes('supersedes'));
+                    expect(board().value).toContain('Changes since the previous assessment:');
+                } else {
+                    await until(() => ui.root.textContent.includes('This assessment is not available.'));
+                    expect(board()).toBeUndefined();
+                }
+            } finally { ui.controller.destroy(); }
+        }
+    });
+
     test.each([[14, ACCEPTED_NCSC_CONTEXT], [16, NCSC_V2_CONTEXT]])(
         'signed-in progress counts the actual retained questions when either profile is available: %i', async (total, profile) => {
             const h = await backend(profile); await h.execute(createCommand());

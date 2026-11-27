@@ -896,7 +896,11 @@
                 const value = response && response.assessment;
                 return value && value.assessmentId === earlier[0].assessmentId && value.status === 'submitted' &&
                     sameProfile(value.profileRef, detail.profileRef) ? value : null;
-            }, () => null);
+            }, error => {
+                // A refusal clears the picture, as Compare does; other failures leave the summary as shown.
+                if (live(token) && refused(error)) { abort(); epoch++; failure({ statusCode: 403 }, null); render(); }
+                return null;
+            });
             previousRead = { key, promise };
             return promise;
         }

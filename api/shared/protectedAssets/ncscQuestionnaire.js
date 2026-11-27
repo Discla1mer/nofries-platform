@@ -1003,21 +1003,38 @@
             } finally { requests.delete(request); }
         }
         // #733: the submitted assessment just before the one shown, on the same
-        // questions, read once per view. Only from a fully loaded list: an
-        // unloaded page could hold a submission between the two.
+        // questions, read once per view. Uses the loaded list, or reads its first
+        // page when Results was opened directly; only a complete list counts,
+        // because an unloaded page could hold a submission between the two. A
+        // refusal takes the normal denial path; any other failure just leaves
+        // the summary without the supersedes lines.
         let previousRead = null;
         function previousSubmission() {
             const current = acknowledged, key = epoch + ':' + (current && current.assessmentId);
             if (previousRead && previousRead.key === key) return previousRead.promise;
             const expected = epoch, submittedAt = current && current.submission ? Date.parse(current.submission.submittedAt) : NaN;
-            const earlier = !listLoaded || nextAfter !== null || !current ? [] : summaries.filter(function (item) {
-                return item.status === 'submitted' && item.assessmentId !== current.assessmentId &&
-                    profileMatches(item.profileRef, current.profileRef) && Date.parse(item.updatedAt) < submittedAt;
-            }).sort(function (left, right) { return right.updatedAt.localeCompare(left.updatedAt); });
-            const promise = !earlier.length ? Promise.resolve(null) : call('read', earlier[0].assessmentId, expected).then(function (result) {
-                const value = result && result.assessment;
-                return value && value.assessmentId === earlier[0].assessmentId && value.status === 'submitted' ? value : null;
-            }, function () { return null; });
+            const pick = function (items) {
+                return items.filter(function (item) {
+                    return item.status === 'submitted' && item.assessmentId !== current.assessmentId &&
+                        profileMatches(item.profileRef, current.profileRef) && Date.parse(item.updatedAt) < submittedAt;
+                }).sort(function (left, right) { return right.updatedAt.localeCompare(left.updatedAt); })[0] || null;
+            };
+            const history = !current || !current.submission ? Promise.resolve([])
+                : listLoaded ? Promise.resolve(nextAfter === null ? summaries : [])
+                : call('list', { limit: 50, afterAssessmentId: null }, expected).then(function (result) {
+                    return result && Array.isArray(result.assessments) && result.nextAfterAssessmentId === null ? result.assessments : [];
+                });
+            const promise = history.then(function (items) {
+                const earlier = pick(items);
+                return earlier ? call('read', earlier.assessmentId, expected).then(function (result) {
+                    const value = result && result.assessment;
+                    return value && value.assessmentId === earlier.assessmentId && value.status === 'submitted' ? value : null;
+                }) : null;
+            }).catch(function (error) {
+                if (live(expected) && error && (error.statusCode === 403 || error.status === 403 || error.statusCode === 401 || error.status === 401 ||
+                    error.code === 'ncsc_access_denied')) deny();
+                return null;
+            });
             previousRead = { key: key, promise: promise };
             return promise;
         }
