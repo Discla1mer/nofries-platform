@@ -438,3 +438,21 @@ test('two questions on one control never share a title in the board summary or t
     // A control with one question keeps its plain title.
     expect(board).toMatch(/- Patching\n/);
 });
+
+// #714: results explain a gap by the harm it prevents, never by how to answer the question.
+test('every v2 "Why it matters" line names a harm in 25 words or fewer and holds no answering instruction', () => {
+    const { createNcscQuestionnaireMetadataV2, createNcscQuestionnaireMetadata } = require('../api/shared/ncscQuestionnaireMetadata');
+    const client = require('../api/shared/protectedAssets/ncscQuestionnaire');
+    const metadata = createNcscQuestionnaireMetadataV2();
+    expect(metadata.questions).toHaveLength(16);
+    const lines = metadata.questions.map(question => client.gapWhy(metadata, question));
+    expect(new Set(lines).size).toBe(16);
+    for (const line of lines) {
+        expect(line).not.toMatch(/answer (Partly|Sometimes|Yes|No)|Choose the weakest|choose Not applicable/i);
+        expect(line.split(/\s+/).length).toBeLessThanOrEqual(25);
+        expect(line).toMatch(/\.$/);
+    }
+    // The earlier profile keeps its own text.
+    const accepted = createNcscQuestionnaireMetadata();
+    expect(client.gapWhy(accepted, accepted.questions[0])).toBe(accepted.questions[0].guidance.summary);
+});
