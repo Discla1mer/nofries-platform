@@ -152,9 +152,12 @@ test('NCSC figures: latest quarter charted, survey population stated exactly, fr
         const page = text(name);
         expect([name, /373 businesses/.test(page)]).toEqual([name, false]);
         expect([name, /373 (?:SME )?IT or operational decision makers/.test(page)]).toEqual([name, true]);
-        expect([name, /up to 49 full-time staff/.test(page)]).toEqual([name, true]);
+        // The Tracker's unit is full-time equivalents (p. 4), not a headcount of full-time staff.
+        expect([name, /0–49 full-time equivalents \(FTEs\)/.test(page)]).toEqual([name, true]);
+        expect([name, /full-time staff|\d+ (?:to|–) ?\d+ staff\b/.test(page)]).toEqual([name, false]);
         expect([name, /small businesses (?:say|that say)|small businesses, 2026/.test(page)]).toEqual([name, false]);
     }
+    expect(text('roadmap.html')).toContain('76% of firms with 20–49 FTEs');
     for (const name of ['roadmap.html', 'index.html', 'pricing.html', 'sample-result.html'])
         expect([name, /Framework\s*:\s*five functions, \d+ questions/.test(text(name))]).toEqual([name, false]);
 });
