@@ -50,13 +50,17 @@ const { renderV1Parity } = require('./fixtures/overviewParity');
 // sentence on what a second assessment is for, and the Actions card's empty line
 // names saved plan actions when gaps are listed above it. The compared, draft-only
 // and empty datasets are unchanged, as are all models, requests and actions.
+// The No Fries steer (owner direction, 28 Nov 2026) updates the four DOM digests
+// that list gaps: one "No Fries can help you fix any of these." line sits above
+// the gap list. Models, requests and actions are unchanged, as are the draft-only
+// and empty datasets.
 const EXPECTED_V1 = {
-    "mixed single result": {"dom": "c361bd63f1885ade77bf03b44d0de0894a4d1aff1c1c857515063d294e0aa553", "models": "1090aaaa9a72e144276c87fbf806f98258434689b118da98fff5587466657317", "requests": "0bc62d8a75163b4c0cbd9eae4bf23d3fb1075fc46f1296b9ca669d132522ccbe", "actions": "382ab69c2c7db231fb94b554071fa910bb4e87756ba47d29547221a5d5dc3118"},
-    "three results and a draft, compared": {"dom": "2016511dbdb2d94f15659a4d875e9d1948204f708274f676b096f3fc91904127", "models": "4b41f9a9893a8523e0efd203626b5b51a21332e766a8385320879abf5237386b", "requests": "845dc7275fade1a166f73f9517ca9da94f526f1932a61d894e605e4d8d7921ef", "actions": "382ab69c2c7db231fb94b554071fa910bb4e87756ba47d29547221a5d5dc3118"},
+    "mixed single result": {"dom": "e71cd66b3ae798fe11d0b2bc6db4b9955f851d814441fd10e5aa23b1f7346744", "models": "1090aaaa9a72e144276c87fbf806f98258434689b118da98fff5587466657317", "requests": "0bc62d8a75163b4c0cbd9eae4bf23d3fb1075fc46f1296b9ca669d132522ccbe", "actions": "382ab69c2c7db231fb94b554071fa910bb4e87756ba47d29547221a5d5dc3118"},
+    "three results and a draft, compared": {"dom": "4661315ab8cb57e8d3ce4304e1b1ac3d5d7f81379cbedd7b79b5f815011b38ff", "models": "4b41f9a9893a8523e0efd203626b5b51a21332e766a8385320879abf5237386b", "requests": "845dc7275fade1a166f73f9517ca9da94f526f1932a61d894e605e4d8d7921ef", "actions": "382ab69c2c7db231fb94b554071fa910bb4e87756ba47d29547221a5d5dc3118"},
     "draft only": {"dom": "19dd2dc08b683324e28380d0a1177718b211998f359c59bfa7e1a5bcb3cc2bc1", "models": "2772bcc0d42c03eee0cc71978e76ca33cba06678d81d480bce411aae65809881", "requests": "0bc62d8a75163b4c0cbd9eae4bf23d3fb1075fc46f1296b9ca669d132522ccbe", "actions": "382ab69c2c7db231fb94b554071fa910bb4e87756ba47d29547221a5d5dc3118"},
     "empty organisation": {"dom": "aa85043d776c6e1f88fc1d969dd33babd1d0ba6865f68ca471ba0d7e51fc7b5d", "models": "3780390742e7759777266b571cc73e3936831d9932af25d137babd5ca79c5934", "requests": "9d958ad5c85eeed7346a66959c79d22e6c4551a3b2f3a623487e26109fa09d0c", "actions": "382ab69c2c7db231fb94b554071fa910bb4e87756ba47d29547221a5d5dc3118"},
-    "mostly unknown, with actions and plan links": {"dom": "da5c93533d3f3a416c83114358335524583d49ccb2067b8bf068d2c7c9775418", "models": "78c602dbc29aad06bbf3e00ca09ea209489ef405838263f7f72d1d8a12b64daf", "requests": "0bc62d8a75163b4c0cbd9eae4bf23d3fb1075fc46f1296b9ca669d132522ccbe", "actions": "382ab69c2c7db231fb94b554071fa910bb4e87756ba47d29547221a5d5dc3118"},
-    "two gaps only": {"dom": "21fef776945f59c048a1aa09b22a414c6b2154d983cdeeb5dc5aa159ee89236b", "models": "19b587b318bcb19a3a828fd9ebac9fc5364dc2a6a982544c2e3fec843c15e3c1", "requests": "0bc62d8a75163b4c0cbd9eae4bf23d3fb1075fc46f1296b9ca669d132522ccbe", "actions": "382ab69c2c7db231fb94b554071fa910bb4e87756ba47d29547221a5d5dc3118"},
+    "mostly unknown, with actions and plan links": {"dom": "f84576aaf534364a1dc8b329e31fdd31226062cb6d445f0ad2fc46877f9b29b7", "models": "78c602dbc29aad06bbf3e00ca09ea209489ef405838263f7f72d1d8a12b64daf", "requests": "0bc62d8a75163b4c0cbd9eae4bf23d3fb1075fc46f1296b9ca669d132522ccbe", "actions": "382ab69c2c7db231fb94b554071fa910bb4e87756ba47d29547221a5d5dc3118"},
+    "two gaps only": {"dom": "afcde13afc760ceedb2f450208659e0824ee27b3fc1b099c3542d8e5b26ea938", "models": "19b587b318bcb19a3a828fd9ebac9fc5364dc2a6a982544c2e3fec843c15e3c1", "requests": "0bc62d8a75163b4c0cbd9eae4bf23d3fb1075fc46f1296b9ca669d132522ccbe", "actions": "382ab69c2c7db231fb94b554071fa910bb4e87756ba47d29547221a5d5dc3118"},
 };
 
 test('flag off: v1 Overview, Actions summary, client models and requests match the recorded v1 baseline', async () => {
