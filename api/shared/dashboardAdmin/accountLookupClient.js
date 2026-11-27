@@ -182,12 +182,16 @@
     let pending = null, requiredWord = '';
     const wordTyped = () => !requiredWord || String(dialogWord.value).trim().toUpperCase() === requiredWord;
     dialogWord.addEventListener('input', () => { dialogYes.disabled = !wordTyped(); });
-    function close() { pending = null; requiredWord = ''; dialogWord.value = ''; dialogWordLabel.hidden = true; dialogYes.disabled = false; if (dialog.open) dialog.close(); }
+    // Every way out of the dialog (Cancel, Escape, Yes) clears the typed word,
+    // so a later single-account confirmation never inherits it.
+    function forget() { pending = null; requiredWord = ''; dialogWord.value = ''; dialogWordLabel.hidden = true; dialogYes.disabled = false; }
+    function close() { forget(); if (dialog.open) dialog.close(); }
     dialogNo.addEventListener('click', close);
-    dialog.addEventListener('cancel', () => { pending = null; });
+    dialog.addEventListener('cancel', forget);
     dialogYes.addEventListener('click', () => { if (!wordTyped()) return; const next = pending; close(); if (next) next(); });
     function ask(action, row, cells) {
         if (working || !wipe()) return;
+        forget();
         const words = CONFIRM[action];
         dialogTitle.textContent = words.title; dialogBody.textContent = words.body(row.email); dialogYes.textContent = words.yes;
         dialogYes.className = action === 'delete' ? 'danger' : '';
@@ -201,7 +205,11 @@
         try {
             const result = await service.perform(action, row.email, row.provider);
             cells.status.textContent = result.text;
-            if (result.done && action === 'delete') { cells.row.classList.add('account-deleted'); cells.buttons.forEach(button => { button.hidden = true; button.dataset.gone = 'true'; }); }
+            if (result.done && action === 'delete') {
+                cells.row.classList.add('account-deleted'); cells.buttons.forEach(button => { button.hidden = true; button.dataset.gone = 'true'; });
+                // A deleted row can no longer be ticked or swept up by "Select all shown".
+                const entry = entries.find(item => item.cells === cells); if (entry) { entry.gone = true; entry.box.checked = false; }
+            }
         } finally { working = false; setRowButtons(false); }
     }
     function setRowButtons(disabled) { listResult.querySelectorAll('[data-wipe]').forEach(button => { button.disabled = disabled; }); refresh(); }
@@ -229,7 +237,7 @@
         bulk.hidden = !on;
         bulkCount.textContent = picked ? `${picked} selected` : '';
         Object.values(bulkButtons).forEach(button => { button.disabled = working || !picked; });
-        entries.forEach(entry => { entry.box.disabled = working; });
+        entries.forEach(entry => { entry.box.disabled = working || entry.gone; });
         bulkAll.disabled = working; bulkFilter.disabled = working;
     }
     function applyFilter() {

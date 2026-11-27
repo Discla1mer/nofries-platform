@@ -224,6 +224,29 @@ describe('customer accounts list: opens by itself, with Reset and Delete on ever
             expect(boxes(h).map(box => box.checked)).toEqual([false, true, true]);
         });
 
+        test('Escape on a bulk confirmation leaves nothing behind for a single-account confirmation', async () => {
+            const h = setup(true, { done: true, text: 'Reset complete.' }, three); await autoload(h);
+            tick(h, 0); h.nodes.get('accountListBulkDelete').click();
+            const typed = h.dialog.querySelector('input'); typed.value = 'DEL';
+            fire(h.dialog, 'cancel'); h.dialog.open = false;
+            h.button('Reset').click();
+            const yes = h.dialog.querySelectorAll('button').find(item => item.textContent === 'Yes, reset');
+            expect(typed.value).toBe(''); expect(h.dialog.querySelector('label').hidden).toBe(true); expect(yes.disabled).toBe(false);
+            yes.click(); await new Promise(resolve => setImmediate(resolve));
+            expect(h.perform).toHaveBeenCalledWith('reset', 'a@test.example', 'external');
+        });
+
+        test('an account deleted from its own row is left out of "Select all shown" and later bulk runs', async () => {
+            const h = setup(true, { done: true, text: 'Delete complete.' }, three); await autoload(h);
+            h.button('Delete').click();
+            h.dialog.querySelectorAll('button').find(item => item.textContent === 'Yes, delete').click();
+            await new Promise(resolve => setImmediate(resolve));
+            const all = h.nodes.get('accountListSelectAll'); all.checked = true; fire(all, 'change');
+            expect(boxes(h).map(box => box.checked)).toEqual([false, true, true]);
+            expect(boxes(h)[0].disabled).toBe(true);
+            expect(h.nodes.get('accountListSelected').textContent).toBe('2 selected');
+        });
+
         test('with reset and delete switched off there is nothing to select with', async () => {
             const h = setup(false, undefined, three); await autoload(h);
             expect(h.nodes.get('accountListBulk').hidden).toBe(true);
