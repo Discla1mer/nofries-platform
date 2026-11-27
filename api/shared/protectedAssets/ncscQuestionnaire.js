@@ -820,6 +820,7 @@
         let disposed = false;
         let epoch = 0;
         let renderedErrorKey = '[]';
+        let busyAction = null;
         let editGeneration = 0;
         let selected = null;
         let acknowledged = null;
@@ -1190,7 +1191,9 @@
             const dirty = dirtyEntries().length;
             // Keep draft feedback beside Save so changing status text cannot move its pointer target.
             status.hidden = editable && !!acknowledged && acknowledged.status !== 'submitted' && !reviewing;
-            status.textContent = statusText || (busy ? 'Saving your answers. ' + saved : loading ?
+            // Only a save of answers says "Saving your answers" (#699): creating the
+            // assessment, before anything is answered, says what it is doing.
+            status.textContent = statusText || (busy ? busyAction === 'create' ? 'Setting up your assessment.' : busyAction === 'submit' ? 'Submitting your answers.' : 'Saving your answers. ' + saved : loading ?
                 view === 'assessment' && !acknowledged ? 'Loading the selected assessment.' : 'Loading assessments.'
                 : savingNow() ? 'Saving…' : saved + (dirty ? 'Newer changes are not saved yet.' : ''));
             if (saveStatus && root.contains(saveStatus)) saveStatus.textContent = status.textContent;
@@ -1686,6 +1689,18 @@
                     (toConfirm ? ' ' + toConfirm + (toConfirm === 1 ? ' answer is' : ' answers are') + ' still to confirm (' + confirmBreakdown(toConfirm - notApplicable, notApplicable) +
                         '). You can submit with ' + (toConfirm === 1 ? 'it' : 'them') + ', but ' + (toConfirm === 1 ? 'it does' : 'they do') + ' not count as in place.' : ''));
             readiness.id = 'ncsc-review-readiness'; panel.append(readiness);
+            // Name each question that blocks submitting, with a jump to it (#669).
+            const incomplete = rows.filter(function (row) { return !row.option || row.missingRationale; });
+            if (incomplete.length) {
+                const jumps = node('ul', 'ncsc-review-jumps'); jumps.id = 'ncsc-review-jumps';
+                incomplete.forEach(function (row) {
+                    const item = node('li');
+                    item.append(button('Question ' + (row.index + 1) + ': ' + plainQuestion(row.question) + (row.option ? ' (needs an explanation)' : ''),
+                        function () { editFromReview(row.index); }, 'dashboard-text-button'));
+                    jumps.append(item);
+                });
+                panel.append(jumps);
+            }
             renderReviewRange(panel, rows, unanswered);
             const scope = node('section', 'ncsc-review-scope'); scope.append(node('h4', '', 'Assessment scope'), scopeText(acknowledged.scopePopulation.description));
             panel.append(scope);
@@ -2502,7 +2517,7 @@
             if (!live() || busy || pending && !retry) return false;
             const expected = epoch;
             if (!retry) pending = { command: command, captures: captures, uncertain: false, keepalive: keepalive === true };
-            const operation = pending; busy = true; statusText = '';
+            const operation = pending; busy = true; busyAction = operation && operation.command ? operation.command.action : null; statusText = '';
             const focusBeforeMutation = doc.activeElement;
             operation.restoreSave = focusBeforeMutation && (focusBeforeMutation.id === 'ncsc-save' || focusBeforeMutation.id === 'ncsc-save-status');
             // Keep Save mounted while a request runs; a second press cannot hit a replacement control.
@@ -2603,7 +2618,9 @@
         }
         function renderPending() {
             const panel = node('section', 'ncsc-warning');
-            panel.append(node('h3', '', busy ? 'Saving your answers' : 'We could not confirm the save'), node('p', '', busy ? 'Please wait and do not submit again. Your answers stay on this page until the save finishes.' : 'Your answers are still on this page. Use the retry button below; do not start again.'));
+            const creating = busyAction === 'create';
+            panel.append(node('h3', '', busy ? creating ? 'Setting up your assessment' : 'Saving your answers' : 'We could not confirm the save'),
+                node('p', '', busy ? creating ? 'Please wait a moment. Your scope stays on this page until it finishes.' : 'Please wait and do not submit again. Your answers stay on this page until the save finishes.' : 'Your answers are still on this page. Use the retry button below; do not start again.'));
             if (!busy) panel.append(button('Try the save again', function () { if (pending && !busy) perform(pending.command, pending.captures, true); }));
             content.append(panel);
         }
