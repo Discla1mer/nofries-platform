@@ -44,6 +44,15 @@
             <p>Every customer account, newest first. Open shows its dashboard access. Reset and Delete ask you to confirm first and cannot be undone.</p>
             <button id="accountListLoad" type="button">Refresh list</button>
             <p id="accountListStatus" role="status" aria-live="polite" aria-atomic="true"></p>
+            <div id="accountListBulk" class="account-bulk" hidden>
+                <label for="accountListFilter">Filter</label>
+                <input id="accountListFilter" type="search" maxlength="254" autocomplete="off" spellcheck="false" placeholder="Email or organisation">
+                <label class="account-bulk-all"><input id="accountListSelectAll" type="checkbox"> Select all shown</label>
+                <span id="accountListSelected" role="status" aria-live="polite"></span>
+                <button id="accountListBulkReset" type="button" disabled>Reset selected</button>
+                <button id="accountListBulkDelete" type="button" class="danger" disabled>Delete selected</button>
+                <button id="accountListBulkStop" type="button" hidden>Stop after this one</button>
+            </div>
             <div id="accountListResults" role="region" aria-label="Signups" tabindex="0" aria-busy="false"></div>
         </section>
         <section id="contactRequestsPanel" aria-labelledby="contactRequestsHeading" hidden>

@@ -132,9 +132,9 @@ test('pagehide aborts a pending signup list and its late response is never rende
 describe('customer accounts list: opens by itself, with Reset and Delete on every row behind one confirmation', () => {
     const listed = { rows: [{ provider: 'external', readable: true, email: 'row@example.test', accountType: 'company', plan: 'starter',
         createdAt: null, activatedAt: null, signup: 'unfinished', signIn: 'none', organisationsComplete: true, organisations: [] }], truncated: false };
-    function setup(wipeOn = true, outcome = { done: true, text: 'Delete complete for row@example.test.' }) {
-        const fetch = jest.fn(async url => url === '/api/dashboard/session' ? session : json(200, listed));
-        const perform = jest.fn(async () => outcome);
+    function setup(wipeOn = true, outcome = { done: true, text: 'Delete complete for row@example.test.' }, data = listed) {
+        const fetch = jest.fn(async url => url === '/api/dashboard/session' ? session : json(200, data));
+        const perform = jest.fn(async (...args) => typeof outcome === 'function' ? outcome(...args) : outcome);
         const timers = [];
         const { document, window } = createDom(), nodes = new Map(), create = document.createElement;
         document.createElement = tag => {
@@ -156,6 +156,79 @@ describe('customer accounts list: opens by itself, with Reset and Delete on ever
         return { fetch, perform, timers, nodes, dialog, button };
     }
     const autoload = async h => { const [fn, ms] = h.timers.find(([, ms]) => ms === 0); expect(ms).toBe(0); await fn(); };
+
+    describe('several accounts at once', () => {
+        const account = (email, org) => ({ ...listed.rows[0], email, organisations: [{ name: org, kind: 'own' }] });
+        const three = { rows: [account('a@test.example', 'Alpha Ltd'), account('b@test.example', 'Beta Ltd'), account('real@customer.example', 'Gamma Ltd')], truncated: false };
+        const fire = (node, name) => [...node.events[name]].forEach(fn => fn({ currentTarget: node, preventDefault() {} }));
+        const boxes = h => h.nodes.get('accountListResults').querySelectorAll('input');
+        const tick = (h, index) => { boxes(h)[index].checked = true; fire(boxes(h)[index], 'change'); };
+        const confirm = async (h, word, label) => {
+            const typed = h.dialog.querySelector('input'), yes = h.dialog.querySelectorAll('button').find(item => item.textContent === label);
+            expect(yes.disabled).toBe(true);
+            yes.click(); await new Promise(resolve => setImmediate(resolve)); expect(h.perform).not.toHaveBeenCalled();
+            typed.value = word; fire(typed, 'input'); expect(yes.disabled).toBe(false);
+            yes.click(); for (let i = 0; i < 10; i++) await new Promise(resolve => setImmediate(resolve));
+        };
+
+        test('nothing is selected to begin with, and the bulk buttons need a selection', async () => {
+            const h = setup(true, undefined, three); await autoload(h);
+            expect(h.nodes.get('accountListBulk').hidden).toBe(false);
+            expect(boxes(h).map(box => box.checked)).toEqual([false, false, false]);
+            expect(boxes(h)[0].getAttribute('aria-label')).toBe('Select a@test.example');
+            expect(h.nodes.get('accountListBulkDelete').disabled).toBe(true);
+            tick(h, 0);
+            expect(h.nodes.get('accountListSelected').textContent).toBe('1 selected');
+            expect(h.nodes.get('accountListBulkDelete').disabled).toBe(false);
+        });
+
+        test('filter then "Select all shown" picks only the matching accounts; delete needs the word typed and runs one at a time', async () => {
+            const h = setup(true, async (_action, email) => ({ done: true, text: `Delete complete for ${email}.` }), three); await autoload(h);
+            const filter = h.nodes.get('accountListFilter'), all = h.nodes.get('accountListSelectAll');
+            filter.value = 'TEST.example'; fire(filter, 'input');
+            all.checked = true; fire(all, 'change');
+            expect(boxes(h).map(box => box.checked)).toEqual([true, true, false]);
+            h.nodes.get('accountListBulkDelete').click();
+            expect(h.dialog.textContent).toContain('Delete 2 accounts?');
+            expect(h.dialog.textContent).toContain('a@test.example, b@test.example');
+            expect(h.dialog.textContent).not.toContain('real@customer.example');
+            await confirm(h, ' delete ', 'Yes, delete 2 accounts');
+            expect(h.perform.mock.calls).toEqual([['delete', 'a@test.example', 'external'], ['delete', 'b@test.example', 'external']]);
+            expect(h.nodes.get('accountListResults').querySelectorAll('.account-deleted')).toHaveLength(2);
+            expect(h.nodes.get('accountListStatus').textContent).toBe('Deleted 2 accounts.');
+            expect(h.nodes.get('accountListBulkDelete').disabled).toBe(true);
+        });
+
+        test('an organisation name also filters, and Cancel changes nothing', async () => {
+            const h = setup(true, undefined, three); await autoload(h);
+            const filter = h.nodes.get('accountListFilter');
+            filter.value = 'gamma'; fire(filter, 'input');
+            const rows = h.nodes.get('accountListResults').querySelectorAll('tr').filter(tr => tr.querySelectorAll('input').length);
+            expect(rows.map(tr => Boolean(tr.hidden))).toEqual([true, true, false]);
+            tick(h, 2); h.nodes.get('accountListBulkReset').click();
+            expect(h.dialog.textContent).toContain('Reset 1 account?');
+            h.dialog.querySelectorAll('button').find(item => item.textContent === 'Cancel').click();
+            expect(h.perform).not.toHaveBeenCalled(); expect(h.dialog.querySelector('input').value).toBe('');
+        });
+
+        test('the run stops at the first account that does not complete and says how many are left', async () => {
+            const h = setup(true, async (_action, email) => email.startsWith('b@')
+                ? { done: false, text: 'Too many requests just now. Wait a minute and try again.' } : { done: true, text: 'Delete complete.' }, three);
+            await autoload(h);
+            [0, 1, 2].forEach(index => tick(h, index));
+            h.nodes.get('accountListBulkDelete').click();
+            await confirm(h, 'DELETE', 'Yes, delete 3 accounts');
+            expect(h.perform).toHaveBeenCalledTimes(2);
+            expect(h.nodes.get('accountListStatus').textContent).toBe('Deleted 1 account. Stopped at b@test.example: see its row. 2 not done.');
+            expect(h.nodes.get('accountListResults').textContent).toContain('Too many requests just now.');
+            expect(boxes(h).map(box => box.checked)).toEqual([false, true, true]);
+        });
+
+        test('with reset and delete switched off there is nothing to select with', async () => {
+            const h = setup(false, undefined, three); await autoload(h);
+            expect(h.nodes.get('accountListBulk').hidden).toBe(true);
+        });
+    });
 
     test('the list loads straight away and each row carries Open, Reset and Delete', async () => {
         const h = setup();
@@ -243,7 +316,7 @@ test('every list and lookup cell names its column so narrow screens can show lab
     const list = harness(jest.fn(async url => url === '/api/dashboard/session' ? session : json(200, listed)));
     await [...list.nodes.get('accountListLoad').events.click][0]();
     expect(cells(list.nodes.get('accountListResults')).map(cell => cell.getAttribute('data-label')))
-        .toEqual(['Email', 'Type', 'Account formed', 'Signup', 'Sign-in record', 'Organisations', 'Plan', 'Actions']);
+        .toEqual(['Select', 'Email', 'Type', 'Account formed', 'Signup', 'Sign-in record', 'Organisations', 'Plan', 'Actions']);
     const lookup = harness(sessionThenLookup(reply('card@example.test')));
     lookup.nodes.get('accountLookupEmail').value = 'card@example.test'; await lookup.submit();
     const labels = cells(lookup.nodes.get('accountLookupResults')).map(cell => cell.getAttribute('data-label'));
