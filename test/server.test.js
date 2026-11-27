@@ -202,6 +202,21 @@ function scriptSourceDirective(contentSecurityPolicy) {
         .find((directive) => directive.startsWith('script-src '));
 }
 
+describe('short scam addresses (#697)', () => {
+    test.each(['/scams', '/scam', '/scams.html', '/scam.html'])('%s redirects to the invoice-scam page and keeps the campaign query', async route => {
+        const tagged = await request(app).get(`${route}?utm_source=meta&utm_medium=paid&utm_campaign=scam`);
+        expect(tagged.status).toBe(301);
+        expect(tagged.headers.location).toBe('/invoice-scams?utm_source=meta&utm_medium=paid&utm_campaign=scam');
+        expect((await request(app).get(route)).headers.location).toBe('/invoice-scams');
+        // The path is fixed: nothing in the request can point the redirect off-site.
+        expect((await request(app).get(`${route}?next=//evil.example`)).headers.location).toBe('/invoice-scams?next=//evil.example');
+    });
+    test('the destination is a real page', async () => {
+        const page = await request(app).get('/invoice-scams?utm_campaign=scam');
+        expect(page.status).toBe(200); expect(page.text).toContain('<h1');
+    });
+});
+
 describe('dormant dashboard document', () => {
     test('dashboard document serves the same generic hash-bound entry at both aliases without activating APIs', async () => {
         const first = await request(app).get('/dashboard?organisationId=untrusted-record');

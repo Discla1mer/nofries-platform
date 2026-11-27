@@ -116,3 +116,9 @@ test('the campaign hop keeps the validated same-tab tag through the anchored Con
     expect(window.enquiryTopic()).toBe('90-day managed security');
     expect(window.enquiryCampaign()).toBe('meta/paid/cover-2026');
 });
+
+test('short scam addresses redirect to the invoice-scam page and the homepage links to it (#697)', () => {
+    for (const route of ['/scams', '/scam', '/scams.html', '/scam.html'])
+        expect(config.routes.find(item => item.route === route)).toEqual({ route, redirect: '/invoice-scams', statusCode: 301 });
+    expect(read('index.html')).toContain('<a href="/invoice-scams" data-dashboard-leave>Invoice scam check</a>');
+});
