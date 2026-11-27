@@ -18,12 +18,11 @@ const CHOICES = Object.freeze({ industries: INDUSTRIES, regions: REGIONS, sizeBa
 const MAX_REVISION = 2147483647;
 
 class OrganisationProfileError extends Error {
-    constructor(code = 'organisation_profile_unavailable', statusCode = 503, profile = null) {
+    constructor(code = 'organisation_profile_unavailable', statusCode = 503) {
         super(code); this.code = code; this.statusCode = statusCode;
-        if (profile) this.profile = profile;
     }
 }
-const fail = (code, status, profile) => { throw new OrganisationProfileError(code, status, profile); };
+const fail = (code, status) => { throw new OrganisationProfileError(code, status); };
 
 const READ_SQL = `SELECT revision, website, industry, region, size_band, updated_at
     FROM nofries.dashboard_organisation_profiles WHERE tenant_id=$1 AND organisation_id=$2`;
@@ -70,6 +69,9 @@ async function readProfile(tx, scope) {
 const sameValues = (a, b) => FIELDS.every(key => a[key] === b[key]);
 
 // input undefined: read. Otherwise a normalised save (normaliseOrganisationProfile).
+// A stale save resolves (never throws) to { conflict: currentProfile }, so the
+// transaction's final membership and permission checks still run before the
+// current profile is disclosed.
 async function organisationProfile({ database, context: contextInput, clock, audit }, input) {
     const context = requireTenantRequestContext(contextInput);
     const command = input === undefined ? null : normaliseOrganisationProfile(input);
@@ -77,7 +79,7 @@ async function organisationProfile({ database, context: contextInput, clock, aud
     return database.withTenantTransaction(scope.tenantId, async tx => {
         const current = await readProfile(tx, scope);
         if (!command) return Object.freeze({ ...current, choices: CHOICES });
-        if (command.expectedRevision !== current.revision) fail('organisation_profile_conflict', 409, current);
+        if (command.expectedRevision !== current.revision) return Object.freeze({ conflict: current });
         // Saving the same values again changes nothing and writes no audit event.
         if (current.revision > 0 && sameValues(current, command)) return current;
         const at = new Date(clock()).toISOString();
@@ -85,7 +87,7 @@ async function organisationProfile({ database, context: contextInput, clock, aud
         const result = current.revision === 0
             ? await tx.query(INSERT_SQL, [scope.tenantId, scope.organisationId, ...values])
             : await tx.query(UPDATE_SQL, [scope.tenantId, scope.organisationId, current.revision, ...values]);
-        if (result.rowCount !== 1) fail('organisation_profile_conflict', 409, await readProfile(tx, scope));
+        if (result.rowCount !== 1) return Object.freeze({ conflict: await readProfile(tx, scope) });
         const saved = await readProfile(tx, scope);
         if (saved.revision !== current.revision + 1 || !sameValues(saved, command)) fail();
         await audit.writeEvent(audit.createEvent(context, { action: 'organisation.manage', module: 'overview', result: 'succeeded' }));

@@ -143,8 +143,6 @@ function failure(error, category) {
             organisation_profile_conflict: 409, organisation_profile_unavailable: 503 };
         code = 'organisation_profile_unavailable';
         if (own(known, error.code) && known[error.code] === error.statusCode) { status = error.statusCode; code = error.code; }
-        // A conflict carries the organisation's current profile so the form can show it.
-        if (code === 'organisation_profile_conflict' && error.profile) { logFailure(category, status, code); return response(status, { code, profile: error.profile }, headers); }
     } else if (error instanceof ContactRequestError) {
         const known = { contact_request_input_invalid: 400, contact_request_access_denied: 403,
             contact_request_operation_conflict: 409, contact_request_unavailable: 503 };
@@ -940,7 +938,7 @@ function createDashboardRuntimeHandlers(configuration) {
         if (selected.profile) {
             // Customer sessions only: staff do not edit an organisation's own profile here.
             if (!isCustomer(privateRequest.headers.cookie)) fail(403, 'dashboard_access_denied');
-            return response(200, await bounded(async () => {
+            const result = await bounded(async () => {
                 let bound;
                 try { bound = await resources.forRequest(privateRequest, { expectedGeneration }); }
                 catch (error) {
@@ -948,7 +946,14 @@ function createDashboardRuntimeHandlers(configuration) {
                     throw new OrganisationProfileError(denied ? 'organisation_profile_access_denied' : 'organisation_profile_unavailable', denied ? 403 : 503);
                 }
                 return bound.organisationProfile(command);
-            }));
+            });
+            // A stale save: the transaction finished its final checks, so the
+            // current profile may be shown for the person to review.
+            if (result && result.conflict) {
+                logFailure(entry.category, 409, 'organisation_profile_conflict');
+                return response(409, { code: 'organisation_profile_conflict', profile: result.conflict });
+            }
+            return response(200, result);
         }
         if (selected.contact) {
             // Customer sessions only: a staff operator cannot ask on a customer's behalf.

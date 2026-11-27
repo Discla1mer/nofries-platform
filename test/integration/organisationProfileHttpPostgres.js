@@ -55,7 +55,8 @@ module.exports = function registerOrganisationProfileHttpPostgres({ ncscHttpSetu
             expect(updated.body).toMatchObject({ revision: 2, website: null, region: 'otago', sizeBand: null });
 
             const stale = await save(h, { expectedRevision: 1, website: '', industry: 'health', region: '', sizeBand: '' });
-            httpJson(stale, 409, 'organisation_profile_conflict');
+            expect(stale.status).toBe(409); expect(stale.body.code).toBe('organisation_profile_conflict');
+            expect(Object.keys(stale.body).sort()).toEqual(['code', 'profile']);
             expect(stale.body.profile).toMatchObject({ revision: 2, industry: 'retail', region: 'otago' });
             expect((await stored(h))[0]).toMatchObject({ revision: 2, industry: 'retail' });
             expect(await audits(h)).toHaveLength(2);

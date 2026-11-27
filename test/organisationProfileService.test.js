@@ -57,15 +57,14 @@ test('the first save inserts revision 1 with a normalised website and writes one
     expect(h.events).toEqual([{ action: { action: 'organisation.manage', module: 'overview', result: 'succeeded' } }]);
 });
 
-test('an update needs the current revision; a stale one is a conflict carrying the current profile and writes nothing', async () => {
+test('an update needs the current revision; a stale one resolves to the current profile and writes nothing', async () => {
     const h = harness({ revision: 2, website: null, industry: 'retail', region: 'otago', size_band: null, updated_at: new Date('2026-11-01T00:00:00Z') });
     const updated = await h.run(body({ expectedRevision: 2, industry: 'health' }));
     expect(updated).toMatchObject({ revision: 3, industry: 'health', region: null });
-    let error;
-    try { await h.run(body({ expectedRevision: 2, industry: 'education' })); } catch (caught) { error = caught; }
-    expect(error).toBeInstanceOf(OrganisationProfileError);
-    expect([error.code, error.statusCode]).toEqual(['organisation_profile_conflict', 409]);
-    expect(error.profile).toMatchObject({ revision: 3, industry: 'health' });
+    // A stale save resolves (so the transaction's final checks run) with the current profile.
+    const stale = await h.run(body({ expectedRevision: 2, industry: 'education' }));
+    expect(Object.keys(stale)).toEqual(['conflict']);
+    expect(stale.conflict).toMatchObject({ revision: 3, industry: 'health' });
     expect(h.row()).toMatchObject({ revision: 3, industry: 'health' });
     expect(h.events).toHaveLength(1);
 });
