@@ -638,6 +638,12 @@ body:is([data-page="operator-dashboard"], [data-dashboard-gateway="true"])[data-
 @media (max-width: 30rem) { .nofries-dashboard .ncsc-questionnaire .ncsc-question { scroll-margin-top: 6rem; } }
 
 .nofries-dashboard .dashboard-topbar { max-height: 9rem; overflow: auto; }
+/* #715 (WCAG 2.4.11 Focus Not Obscured): while the bar is sticky, keyboard focus
+   scrolls clear of it. The bar is about 3.2rem on one line and 4.5rem when a long
+   organisation name wraps to two; the shell may not set styles, so this is fixed. */
+@media screen and (min-width: 48.0625rem) {
+    html:has(.nofries-dashboard .dashboard-topbar) { scroll-padding-top: calc(4.5rem + 8px); }
+}
 /* Let long organisation names remain fully readable on phones without a
    nested scroll area or a sticky header covering the Overview controls. */
 @media screen and (max-width: 48rem) {

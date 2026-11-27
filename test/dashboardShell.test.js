@@ -1031,3 +1031,10 @@ test('the dashboard footer disclosure and organisations pill follow the page gri
     const html = fs.readFileSync(path.join(__dirname, '../app/dashboard.html'), 'utf8');
     assert.match(html, /<details class="site-details">\s*<summary>About this site<\/summary>/);
 });
+
+test('keyboard focus scrolls clear of the sticky organisation bar on wider screens (#715)', () => {
+    const css = fs.readFileSync(path.join(__dirname, '../app/dashboard.css'), 'utf8');
+    assert.match(css, /@media screen and \(min-width: 48\.0625rem\) \{\s*html:has\(\.nofries-dashboard \.dashboard-topbar\) \{ scroll-padding-top: calc\(4\.5rem \+ 8px\); \}/);
+    // The bar stops being sticky at 48rem and below, exactly where the padding stops.
+    assert.match(css, /@media screen and \(max-width: 48rem\) \{[\s\S]*?\.nofries-dashboard \.dashboard-topbar \{ position: static;/);
+});
