@@ -1521,8 +1521,8 @@ test('top three gaps put priority-tier controls first, then not-in-place before 
     assert.match(printed.textContent, /\nSelf-reported gaps; not a risk ranking or certification\.\n/);
     assert.equal(printed.textContent.match(/certif|complian/gi).length, 1);
     // #441: the board or insurer summary carries one disclaimer of its own.
-    const boardPrinted = section.querySelectorAll('.picture-summary-print')[1];
-    assert.match(boardPrinted.textContent, /\nBasis: self-assessment [^\n]*Not certification or independent assurance\.\n/);
+    const boardPrinted = section.querySelector('.board-paper');
+    assert.match(boardPrinted.querySelector('footer').textContent, /Source: self-assessment [^\n]*Not certification or independent assurance\./);
     assert.equal(boardPrinted.textContent.match(/certif|complian/gi).length, 1);
     assert.doesNotMatch(section.textContent.replace(printed.textContent, '').replace(boardPrinted.textContent, ''), /certif|complian/i);
 });
