@@ -30,3 +30,9 @@ describe('static build brand assets', () => {
         }
     });
 });
+
+test('no page type turns off the card-stock paper texture on the body', () => {
+    const css = fs.readFileSync(path.resolve(__dirname, '..', 'style.css'), 'utf8');
+    expect(css).toMatch(/body \{[^}]*background: var\(--page\) var\(--paper-texture\) repeat;/);
+    expect(css).not.toMatch(/body[^{]*\{[^}]*background-image:\s*none/);
+});
