@@ -75,7 +75,7 @@ test('public customer links exclude the separate staff entry', () => {
     assert.match(html, /href="\/terms\.html"/);
     const footer = html.match(/<footer\b[\s\S]*?<\/footer>/)[0];
     assert.deepEqual([...footer.matchAll(/<a\b[^>]*href="([^"]+)"/g)].map(match => match[1]),
-        ['/', '/pricing.html', '/managed-it.html', '/roadmap.html', '/contact.html', '/privacy.html', '/terms.html', '/offer']);
+        ['/', '/pricing.html', '/managed-it.html', '/roadmap.html', '/contact.html', '/privacy.html', '/terms.html', '/offer', '/invoice-scams']);
     const mainNav = html.match(/<nav aria-label="Main navigation">([\s\S]*?)<\/nav>/)[1];
     assert.deepEqual([...mainNav.matchAll(/href="([^"]+)"/g)].map(match => match[1]),
         ['/', '/pricing.html', '/managed-it.html', '/roadmap.html', '/contact.html', '/login?intent=login']);
