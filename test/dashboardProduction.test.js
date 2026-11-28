@@ -394,3 +394,17 @@ test('customer production NCSC reads the existing separate authority container w
     expect(authority.download).toHaveBeenCalledTimes(1); expect(authority.upload).not.toHaveBeenCalled();
     expect(d.pool.connect).not.toHaveBeenCalled();
 });
+
+test.each([undefined, '', 'false', 'TRUE', '1', ' true ', 'true'])('organisation profile flag %p enables the route only for exactly true (#608)', async enabled => {
+    const d = dependencies(), env = environment();
+    if (enabled === undefined) delete env.NOFRIES_ORGANISATION_PROFILE_ENABLED;
+    else env.NOFRIES_ORGANISATION_PROFILE_ENABLED = enabled;
+    const configuration = createProductionDashboardConfiguration(env, d);
+    if (enabled === 'true') expect(configuration.organisationProfileEnabled).toBe(true);
+    else expect(configuration).not.toHaveProperty('organisationProfileEnabled');
+    const response = await require('supertest')(require('../server').createNoFriesApp({ dashboard: configuration }))
+        .get('/api/dashboard/organisation-profile');
+    // Off: an unknown route. On: sign-in is required before any SQL.
+    expect(response.body.code).toBe(enabled === 'true' ? 'dashboard_authentication_required' : 'dashboard_not_found');
+    expect(d.pool.connect).not.toHaveBeenCalled();
+});

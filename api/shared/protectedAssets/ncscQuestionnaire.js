@@ -225,7 +225,11 @@
     // Plain-text summary of a submitted assessment for an IT provider. The
     // results view and the Overview share it, so both copy the same text.
     // Grouped by answer (No, Partial, Unknown, Not applicable), not by risk.
-    function providerSummary(assessment, metadata) {
+    // gaps (optional): the ranked top gaps shown on screen. Gaps listed there
+    // lead the summary in that order, so the IT-provider copy matches (#441).
+    function providerSummary(assessment, metadata, gaps) {
+        const ranked = new Map((Array.isArray(gaps) ? gaps : []).map(function (gap, index) { return [gap.itemId, index]; }));
+        const rank = function (id) { return ranked.has(id) ? ranked.get(id) : Infinity; };
         const labels = new Map(metadata.responseOptions.map(function (item) { return [item.id, item.label]; }));
         const optionOf = function (id) { const response = assessment.responses.find(function (item) { return item.itemId === id; }); return response ? response.optionId : null; };
         const items = [];
@@ -237,21 +241,21 @@
         const v2 = isV2(metadata);
         const gapQuestions = metadata.questions.map(function (question, position) { return { question: question, position: position, group: answerGroup(optionOf(question.id)) }; })
             .filter(function (entry) { return Object.hasOwn(GAP_RANK, entry.group); })
-            .sort(function (a, b) { return (v2 ? 0 : gapTier(a.question.id) - gapTier(b.question.id)) || GAP_RANK[a.group] - GAP_RANK[b.group] || a.position - b.position; });
+            .sort(function (a, b) { return (rank(a.question.id) - rank(b.question.id) || 0) || (v2 ? 0 : gapTier(a.question.id) - gapTier(b.question.id)) || GAP_RANK[a.group] - GAP_RANK[b.group] || a.position - b.position; });
         [['gap', gapQuestions], ['unknown'], ['not_applicable']].forEach(function (pass) {
             const entries = pass[1] || metadata.questions.filter(function (question) { return answerGroup(optionOf(question.id)) === pass[0]; })
                 .map(function (question) { return { question: question, group: pass[0] }; });
             entries.forEach(function (entry) {
                 const question = entry.question, optionId = entry.group;
                 const control = metadata.controls.find(function (item) { return item.id === question.controlId; });
-                const action = optionId === 'unknown' ? 'Ask your IT provider to check what is in place.' : optionId === 'not_applicable' ? 'Confirm with your IT provider whether this applies to your business.' : question.smallBusiness && question.smallBusiness.checks.join(' ') || question.guidance && question.guidance.startingActions && question.guidance.startingActions[0] || 'Agree the next improvement with your IT provider.';
+                const action = optionId === 'unknown' ? 'Not sure? No Fries can check what is in place with you.' : optionId === 'not_applicable' ? 'Not sure this applies? No Fries can confirm it with you.' : question.smallBusiness && question.smallBusiness.checks.join(' ') || question.guidance && question.guidance.startingActions && question.guidance.startingActions[0] || 'Talk to No Fries about the next improvement.';
                 const ownerStart = ['no', 'partial'].includes(optionId) && /^NF-NCSC-MCSS-(RM|SA|AI|RP)-01-Q1$|^NF-NCSC-CC-SV-01-Q1$/.test(question.id);
                 items.push({ title: (control ? control.title : question.prompt) + ' — ' + labels.get(optionOf(question.id)), action: action,
-                    owner: ownerStart ? 'You can start this with your team.' : 'Ask your IT provider to help with this.' });
+                    owner: ownerStart ? 'You can start this with your team.' : '' });
             });
         });
         const lines = ['Cyber security assessment', 'Scope: ' + assessment.scopePopulation.description, 'Submitted: ' + localDate(assessment.submission.submittedAt), 'Self-reported gaps; not a risk ranking or certification.'];
-        return { items: items, text: lines.concat(items.map(function (item) { return item.title + ': ' + item.owner + ' ' + item.action; })).join('\n') };
+        return { items: items, text: lines.concat(items.map(function (item) { return item.title + ': ' + (item.owner ? item.owner + ' ' : '') + item.action; })).join('\n') };
     }
     // Plain-text summary of a submitted assessment for a board or insurer
     // (#441): what is in place, partly in place, not in place and not yet
@@ -259,19 +263,53 @@
     // says so, and the next-step line is left for the customer to fill in.
     // gaps: the ranked top gaps shown on screen (#441 M1-13). The board summary
     // opens with them, in the same order, before the answers grouped by status.
-    function boardSummary(assessment, metadata, gaps) {
+    // #733: the earlier submitted assessment on the same questions, if the
+    // caller could load it. Returns null for anything that is not one.
+    function earlierSubmission(assessment, previous) {
+        if (!previous || !Array.isArray(previous.responses) || !previous.submission || !previous.submission.submittedAt ||
+            previous.assessmentId === assessment.assessmentId || !profileMatches(previous.profileRef, assessment.profileRef) ||
+            !(Date.parse(previous.submission.submittedAt) < Date.parse(assessment.submission.submittedAt))) return null;
+        return previous;
+    }
+    // #696: scoring v2 has controls with two questions (backups and restore
+    // tests; MFA coverage and method). A bare control title then appears twice,
+    // under two different answers. Name the part each question covers; an
+    // unknown two-question control falls back to its question number.
+    const QUESTION_ASPECT = Object.freeze({
+        'NF-NCSC-MCSS-MF-01-Q1': 'coverage', 'NF-NCSC-MCSS-MF-01-Q2': 'method',
+        'NF-NCSC-MCSS-DR-01-Q1': 'backups', 'NF-NCSC-MCSS-DR-01-Q2': 'restore tests'
+    });
+    function questionTitle(metadata, question, base) {
+        const siblings = metadata.questions.filter(function (item) { return item.controlId === question.controlId; });
+        if (siblings.length < 2) return base;
+        return base + ': ' + (QUESTION_ASPECT[question.id] || 'question ' + (siblings.indexOf(question) + 1));
+    }
+    function boardSummary(assessment, metadata, gaps, previousInput) {
         const optionOf = function (id) { const response = assessment.responses.find(function (item) { return item.itemId === id; }); return response ? response.optionId : null; };
+        const previous = earlierSubmission(assessment, previousInput);
         const groups = [['yes', 'In place'], ['partial', 'Partly in place'], ['no', 'Not in place yet'], ['unknown', 'Not yet confirmed'], ['not_applicable', 'Marked not applicable (to be confirmed)']];
         const lines = ['Cyber security position: summary for the board or insurer', 'Scope: ' + assessment.scopePopulation.description,
             'Assessed: ' + localDate(assessment.submission.submittedAt),
+            ...(previous ? ['This summary updates and supersedes the summary assessed ' + localDate(previous.submission.submittedAt) + '.'] : []),
             'Basis: self-assessment using the No Fries questionnaire adapted from New Zealand NCSC guidance. Not certification or independent assurance.'];
         if (Array.isArray(gaps) && gaps.length) lines.push('', 'What needs attention first:', ...gaps.map(function (gap, index) { return (index + 1) + '. ' + gap.title + ' (your answer: ' + gap.answer + ')'; }));
+        if (previous) {
+            // The answers that moved, in question order, by plain title (#733).
+            const label = function (optionId) { const option = (metadata.responseOptions || []).find(function (item) { return item.id === optionId; }); return option ? option.label : 'Not answered'; };
+            const earlierOf = function (id) { const response = previous.responses.find(function (item) { return item.itemId === id; }); return response ? response.optionId : null; };
+            const changes = metadata.questions.filter(function (question) { return earlierOf(question.id) !== optionOf(question.id); }).map(function (question) {
+                const control = metadata.controls.find(function (item) { return item.id === question.controlId; });
+                const title = questionTitle(metadata, question, (control ? control.title : question.prompt).replace(/^No Fries Critical Control extension — /, ''));
+                return '- ' + title + ': ' + label(earlierOf(question.id)) + ' → ' + label(optionOf(question.id));
+            });
+            lines.push('', 'Changes since the previous assessment:', ...(changes.length ? changes : ['- No answers changed.']));
+        }
         groups.forEach(function (group) {
             const titles = [];
             metadata.questions.filter(function (question) { return answerGroup(optionOf(question.id)) === group[0]; }).forEach(function (question) {
                 const control = metadata.controls.find(function (item) { return item.id === question.controlId; });
                 // Plain titles for a board: drop the internal extension prefix.
-                const title = (control ? control.title : question.prompt).replace(/^No Fries Critical Control extension — /, '');
+                const title = questionTitle(metadata, question, (control ? control.title : question.prompt).replace(/^No Fries Critical Control extension — /, ''));
                 if (titles.indexOf(title) === -1) titles.push(title);
             });
             if (titles.length) lines.push('', group[1] + ':', ...titles.map(function (title) { return '- ' + title; }));
@@ -318,14 +356,20 @@
                 'Ask accounts for a payment-change record showing the call to a known number or another independent check.']
         ];
         if (v2) definitions.push(
+            // #702: every v2 answer reaches the pack, including the asset list.
+            ['assets', '', 'NF-NCSC-MCSS-AI-01-Q1', true, '', 'Ask IT for the current list of important devices, software, cloud apps and data, with owners.'],
             ['supplier-access', '', 'NF-NCSC-CC-SU-01-Q1', true, '', 'Get the supplier access list, sign-in settings and written breach-notification terms.'],
             ['email-protection', '', 'NF-NCSC-CC-EM-01-Q1', true, '', 'Ask your email provider for the domain protection and phishing filter settings.']
         );
         const items = definitions.map(function ([id, question, source, allowPartial, action, evidence]) {
             if (v2 && id === 'backup-storage') source = 'NF-NCSC-MCSS-DR-01-Q1';
             if (v2 && id === 'restore-tests') source = 'NF-NCSC-MCSS-DR-01-Q2';
+            // #702: v2 asks whether systems are kept up to date, not the insurer's
+            // deadline; answer from it and say the deadline still needs confirming.
+            const deadline = v2 && id === 'patch-speed';
+            if (deadline) source = 'NF-NCSC-MCSS-PA-01-Q1';
             const sourceQuestion = source && metadata.questions.find(item => item.id === source);
-            if (v2 && sourceQuestion) {
+            if (v2 && sourceQuestion && !deadline) {
                 question = sourceQuestion.prompt;
                 action = sourceQuestion.guidance.startingActions[0];
                 allowPartial = true;
@@ -335,19 +379,28 @@
             const saved = responses.length === 1 ? responses[0].optionId : null;
             const option = v2 ? (sourceQuestion && sourceQuestion.responseOptionIds.includes(saved)
                 ? ({ partly: 'partial', ad_hoc: 'partial' }[saved] || saved) : null) : saved;
-            const answer = option === 'yes' ? 'Yes' : option === 'no' ? 'No' : option === 'partial' && allowPartial ? 'Partly' : 'Not answered';
-            const basis = !source ? 'This assessment does not ask for this detail.'
+            if (deadline) allowPartial = true;
+            const notCovered = v2 && !source;
+            const unknown = v2 && option === 'unknown';
+            const answer = option === 'yes' ? 'Yes' : option === 'no' ? 'No' : option === 'partial' && allowPartial ? 'Partly'
+                : notCovered ? 'Not covered by this check' : unknown ? 'Not confirmed' : v2 && option === 'not_applicable' ? 'Marked not applicable' : 'Not answered';
+            const savedLabel = v2 && saved && metadata.responseOptions.find(item => item.id === saved);
+            const basis = notCovered ? 'This check does not ask about this. Confirm it before answering.'
+                : deadline && savedLabel ? 'From your answer to "kept up to date": ' + savedLabel.label + '. This check did not ask for your insurer\'s deadline, so confirm it.'
+                : unknown ? 'Your saved answer: I don\'t know. Confirm this before answering.'
+                : !source ? 'This assessment does not ask for this detail.'
                 : option === 'partial' && !allowPartial ? 'The broader answer is Partial; it does not confirm this specific detail.'
                 : option === 'not_applicable' ? 'Marked Not applicable in the assessment; this is not confirmation of the control.'
                 : answer === 'Not answered' ? 'The saved answers do not confirm this detail.'
-                : v2 ? 'Your saved answer: ' + metadata.responseOptions.find(item => item.id === saved).label + '. Check the exact coverage before using it.'
+                : v2 ? 'Your saved answer: ' + metadata.responseOptions.find(item => item.id === saved).label + '.'
                 : 'Based on your saved ' + (option === 'partial' ? 'Partial' : answer) + ' answer; check the exact coverage before using it.';
             return { id: id, question: question, answer: answer, basis: basis, action: 'To answer Yes: ' + action,
-                evidence: answer === 'Yes' ? '' : 'Evidence: ' + evidence };
+                evidence: answer === 'Yes' ? '' : 'What to gather: ' + evidence };
         });
         const scope = 'Scope: ' + assessment.scopePopulation.description;
-        const lines = [title, scope, ...items.map(item => item.question + '\nSuggested answer: ' + item.answer + '\n' + item.basis + '\n' + item.action +
-            (item.evidence ? '\n' + item.evidence : '')), footer];
+        // v2 copies the answers only; "To answer Yes" and evidence stay on screen (#702).
+        const lines = [title, scope, ...items.map(item => item.question + '\nSuggested answer: ' + item.answer + '\n' + item.basis +
+            (v2 ? '' : '\n' + item.action + (item.evidence ? '\n' + item.evidence : ''))), footer];
         return { title: title, scope: scope, items: items, footer: footer, text: lines.join('\n\n') };
     }
     // Copies with the clipboard when the browser allows it; otherwise selects
@@ -369,15 +422,23 @@
     }
     // Shared with Overview so campaign presentation keeps the same copy, print,
     // enquiry availability and representative-details controls.
-    function boardSummaryBlock(node, button, win, detail, metadata, inputId, status, boardBlock = node('div', 'picture-board-summary'), addPlanControls, gaps) {
+    // previous (#733): the earlier submitted assessment, or a promise of it.
+    // The summary shows at once and gains the supersedes lines when it arrives.
+    function boardSummaryBlock(node, button, win, detail, metadata, inputId, status, boardBlock = node('div', 'picture-board-summary'), addPlanControls, gaps, previous) {
         const boardLabel = node('label', '', 'Summary for your board or insurer');
         const board = node('textarea', 'ncsc-textarea'); board.id = inputId; boardLabel.htmlFor = board.id;
-        board.readOnly = true; board.rows = 8; board.value = boardSummary(detail, metadata, gaps).text;
+        const settled = previous && typeof previous.then === 'function' ? null : previous;
+        board.readOnly = true; board.rows = 8; board.value = boardSummary(detail, metadata, gaps, settled).text;
         const boardPrinted = node('pre', 'picture-summary-print picture-board-print', board.value); boardPrinted.setAttribute('aria-hidden', 'true');
+        if (previous && typeof previous.then === 'function') previous.then(function (value) {
+            if (!earlierSubmission(detail, value)) return;
+            const text = boardSummary(detail, metadata, gaps, value).text;
+            if (typeof rebase === 'function') rebase(text); else { board.value = text; boardPrinted.textContent = text; }
+        }, function () { /* Without the earlier result the summary stays as shown. */ });
         const boardCopy = button('Copy board summary', () => copySummary(win, board, status));
         boardCopy.classList.add('dashboard-button-secondary'); boardBlock.append(boardLabel, board, boardPrinted);
         const boardPrint = win && typeof win.print === 'function' ? button('Print board summary', () => printOnly(win, boardPrinted)) : null;
-        if (addPlanControls) addPlanControls(board, boardPrinted, boardCopy, boardPrint);
+        const rebase = addPlanControls ? addPlanControls(board, boardPrinted, boardCopy, boardPrint) : null;
         boardBlock.append(boardCopy);
         if (boardPrint) { boardPrint.classList.add('dashboard-button-secondary'); boardBlock.append(boardPrint); }
         return boardBlock;
@@ -412,6 +473,29 @@
     const attention = row => (row.weight || 0) * V2_GAP_FACTOR[row.responseOptionId];
     const GAP_WHY = 'This control helps lower the chance or impact of a cyber incident for your business.';
     const GAP_NEXT = 'Agree who will look at this control and when you will check it again.';
+    // #714: "Why it matters" on a v2 gap names the business harm in one plain
+    // sentence. The profile's guidance summary is answering help for the form,
+    // so it is not shown on results. Wording approved by the owner in review.
+    const V2_GAP_WHY = Object.freeze({
+        'NF-NCSC-MCSS-RM-01-Q1': 'Risks nobody owns tend to get no budget or attention until something goes wrong.',
+        'NF-NCSC-MCSS-SA-01-Q1': 'Many attacks start with a message that tricks a staff member. People who know the signs can stop one before it costs money.',
+        'NF-NCSC-MCSS-AI-01-Q1': 'You can\'t protect or update a device, app or data set you don\'t know you have, and forgotten ones are easy targets.',
+        'NF-NCSC-MCSS-PA-01-Q1': 'Attackers use known flaws in out-of-date software to break in. Updates close those flaws.',
+        'NF-NCSC-MCSS-MF-01-Q1': 'A stolen or guessed password is enough to take over an account unless a second login step stands in the way.',
+        'NF-NCSC-MCSS-MF-01-Q2': 'Text and email codes can be intercepted or tricked out of people. Passkeys and security keys are much harder to steal.',
+        'NF-NCSC-MCSS-DU-01-Q1': 'Without activity records and alerts, a break-in can go unnoticed for weeks and you can\'t tell what was taken.',
+        'NF-NCSC-MCSS-LP-01-Q1': 'The more each account can reach, the more damage a stolen login or a mistake can do.',
+        'NF-NCSC-MCSS-DR-01-Q1': 'If ransomware, theft or a fault wipes your files, a backup the attacker can\'t reach is how you get the business running again.',
+        'NF-NCSC-MCSS-DR-01-Q2': 'A backup that has never been restored may not work when you need it. Testing shows how long recovery really takes.',
+        'NF-NCSC-MCSS-RP-01-Q1': 'In the first hours of an incident, not knowing who to call or what to do costs time, money and data.',
+        'NF-NCSC-CC-PM-01-Q1': 'Reused or shared passwords mean one leaked login can open several accounts. A password manager makes unique passwords practical.',
+        'NF-NCSC-CC-SV-01-Q1': 'Scammers pose as suppliers, managers or staff to get bank details or logins changed. A second check stops the payment or reset going to them.',
+        'NF-NCSC-CC-NS-01-Q1': 'A router with its default password, or Wi-Fi shared with guests, gives a stranger a way into your business systems.',
+        'NF-NCSC-CC-SU-01-Q1': 'A supplier\'s stolen login can become a way into your data. Limits and an extra login step reduce what an attacker can reach.',
+        'NF-NCSC-CC-EM-01-Q1': 'If others can send email that looks like yours, your customers and staff can be tricked into paying or sharing logins.'
+    });
+    const gapWhy = (metadata, question) => isV2(metadata) && V2_GAP_WHY[question.id] ||
+        firstText(question.guidance && question.guidance.summary) || GAP_WHY;
     const firstText = (...values) => values.find(value => typeof value === 'string' && value.trim()) || null;
     function rankedGaps(result, metadata) {
         if (!result || !Array.isArray(result.domains) || !metadata || !Array.isArray(metadata.questions)) return [];
@@ -433,10 +517,10 @@
             const control = controls.get(question.controlId), guidance = question.guidance || {};
             const plain = question.smallBusiness || {};
             const title = firstText(control && control.title, question.prompt);
-            return { itemId: question.id, title: title.split(' — ').pop(), answer: row.answer,
+            return { itemId: question.id, title: questionTitle(metadata, question, title.split(' — ').pop()), answer: row.answer,
                 responseOptionId: row.responseOptionId,
                 firstCheck: firstText((plain.checks || [])[0], (guidance.startingActions || [])[0]) || GAP_NEXT,
-                why: firstText(guidance.summary) || GAP_WHY,
+                why: gapWhy(metadata, question),
                 next: firstText(plain.meaning, (guidance.startingActions || [])[0]) || GAP_NEXT };
         });
     }
@@ -450,7 +534,7 @@
         if (!isV2(metadata)) return [];
         return rankedGaps(result, metadata).slice(V2_GAP_LIMIT).filter(gap => gap.responseOptionId === 'unknown');
     }
-    function rankedGapSection(node, result, metadata, headingId, controls, gaps = topGaps(result, metadata)) {
+    function rankedGapSection(node, result, metadata, headingId, controls, gaps = topGaps(result, metadata), help = GAP_HELP) {
         const v2 = isV2(metadata);
         const unconfirmed = v2 ? confirmNext(result, metadata) : [];
         const section = node('section', 'picture-top-gaps');
@@ -470,6 +554,7 @@
         section.append(node('p', 'dashboard-muted', v2
             ? 'Start with the first gap below. Gaps are ordered by how much each question counts and how far your answer is from fully in place. "I don\'t know" counts as a gap. This is a No Fries planning list from your answers, not an official NCSC priority.'
             : 'Start with the first gap below. Account sign-in checks, updates, backups and payment checks come first. The order is a guide based on your answers.'));
+        section.append(node('p', 'picture-gap-help', help));
         const list = node('ol', 'picture-top-gaps-list');
         gaps.forEach(gap => {
             const item = node('li', 'picture-top-gap'); item.dataset.gapItem = gap.itemId;
@@ -478,8 +563,10 @@
             // Lead with the first specific check, not the restated question (#441 RANGI-13).
             next.append(node('strong', '', 'What to do next: '), node('span', '', gap.firstCheck));
             const ownerStart = /^NF-NCSC-MCSS-(RM|SA|AI|RP)-01-Q1$|^NF-NCSC-CC-SV-01-Q1$/.test(gap.itemId);
-            item.append(node('h4', '', gap.title), node('p', 'dashboard-muted', 'Your answer: ' + gap.answer),
-                node('p', 'picture-gap-owner', ownerStart ? 'You can start this with your team.' : 'Ask your IT provider to help with this.'), why, next);
+            item.append(node('h4', '', gap.title), node('p', 'dashboard-muted', 'Your answer: ' + gap.answer));
+            // #714: the help line shows once above the list, not on every card.
+            if (ownerStart) item.append(node('p', 'picture-gap-owner', 'You can start this with your team.'));
+            item.append(why, next);
             if (controls) item.append(...controls(gap));
             list.append(item);
         });
@@ -505,13 +592,26 @@
         supplier: 'Use any gaps behind your questionnaire answers to choose an improvement. For example, review access to customer files and keep the updated access list as evidence for your next answer.',
         board: 'Choose a practical improvement from your top gaps. The written progress summary can show your board what changed and what still needs attention.'
     };
+    // Owner direction (28 Nov 2026): point people to No Fries for fixing gaps.
+    const GAP_HELP = 'No Fries can help you fix any of these.';
+    // #724: a consultant reads these pages on behalf of an organisation, so the
+    // copy does not address them as its owner. The loader sets the account type
+    // on <body>; it cannot yet tell a consultant's own workspace from a client's,
+    // so the wording fits both.
+    const CONSULTANT_GAP_HELP = 'You can plan these with this organisation in the Improvement Plan.';
+    const consultantViewer = doc => Boolean(doc && doc.body && doc.body.dataset && doc.body.dataset.dashboardAccountType === 'consultant');
+    const gapHelp = doc => consultantViewer(doc) ? CONSULTANT_GAP_HELP : GAP_HELP;
+    // #657: the standing offer and its price, as on /pricing. One place for the dashboard copy.
+    const MANAGED_SECURITY_PRICE = 'NZ$1,250 + GST';
+    const MANAGED_SECURITY_OFFER = 'No Fries can fix these with you: 90-day managed security, ' + MANAGED_SECURITY_PRICE + '.';
     function managedSecurityOffer(node, gated, win, stillCurrent, campaign) {
         const help = node('div', 'picture-next-steps-help'); help.hidden = true;
         const link = node('a', 'dashboard-button', 'Fix these with No Fries'); link.href = '/contact.html?service=managed_security_90';
         const pricing = node('a', '', 'See pricing and what’s included'); pricing.href = '/pricing#pricing-pilot';
         if (campaignOfferBridge[campaign]) help.append(node('p', '', campaignOfferBridge[campaign]));
-        help.append(node('p', 'picture-offer', 'Get help with your assessment gaps through 90-day managed security.'),
-            gated(() => { const actions = node('div', ''); actions.append(link, pricing); return actions; }),
+        // The links only open public pages, so they are not behind the details gate.
+        const actions = node('div', ''); actions.append(link, pricing);
+        help.append(node('p', 'picture-offer', MANAGED_SECURITY_OFFER), actions,
             node('p', 'dashboard-muted', 'Opens the contact form with this service named. The contact form does not include your answers.'));
         enquiryAvailable(win).then(available => { if (available && stillCurrent()) help.hidden = false; });
         return help;
@@ -800,6 +900,8 @@
         const requests = new Set();
         let disposed = false;
         let epoch = 0;
+        let renderedErrorKey = '[]';
+        let busyAction = null;
         let editGeneration = 0;
         let selected = null;
         let acknowledged = null;
@@ -838,6 +940,12 @@
         let questionProgress, progressArc, functionSteps;
         let nextUnanswered;
         let nextUnresolved;
+        // The question bar's Next button and its parent; Review and submit
+        // joins them once every answer is in or on the last question (#725).
+        let navigationNext = null;
+        let navigationReview = null;
+        let navigationReviewSlot = null;
+        let navigationReady = null;
         let assistanceRequest = null;
         let assistanceGeneration = 0;
         let unloadAttached = false;
@@ -944,6 +1052,42 @@
                 return live(expected) ? result : null;
             } finally { requests.delete(request); }
         }
+        // #733: the submitted assessment just before the one shown, on the same
+        // questions, read once per view. Uses the loaded list, or reads its first
+        // page when Results was opened directly; only a complete list counts,
+        // because an unloaded page could hold a submission between the two. A
+        // refusal takes the normal denial path; any other failure just leaves
+        // the summary without the supersedes lines.
+        let previousRead = null;
+        function previousSubmission() {
+            const current = acknowledged, key = epoch + ':' + (current && current.assessmentId);
+            if (previousRead && previousRead.key === key) return previousRead.promise;
+            const expected = epoch, submittedAt = current && current.submission ? Date.parse(current.submission.submittedAt) : NaN;
+            const pick = function (items) {
+                return items.filter(function (item) {
+                    return item.status === 'submitted' && item.assessmentId !== current.assessmentId &&
+                        profileMatches(item.profileRef, current.profileRef) && Date.parse(item.updatedAt) < submittedAt;
+                }).sort(function (left, right) { return right.updatedAt.localeCompare(left.updatedAt); })[0] || null;
+            };
+            const history = !current || !current.submission ? Promise.resolve([])
+                : listLoaded ? Promise.resolve(nextAfter === null ? summaries : [])
+                : call('list', { limit: 50, afterAssessmentId: null }, expected).then(function (result) {
+                    return result && Array.isArray(result.assessments) && result.nextAfterAssessmentId === null ? result.assessments : [];
+                });
+            const promise = history.then(function (items) {
+                const earlier = pick(items);
+                return earlier ? call('read', earlier.assessmentId, expected).then(function (result) {
+                    const value = result && result.assessment;
+                    return value && value.assessmentId === earlier.assessmentId && value.status === 'submitted' ? value : null;
+                }) : null;
+            }).catch(function (error) {
+                if (live(expected) && error && (error.statusCode === 403 || error.status === 403 || error.statusCode === 401 || error.status === 401 ||
+                    error.code === 'ncsc_access_denied')) deny();
+                return null;
+            });
+            previousRead = { key: key, promise: promise };
+            return promise;
+        }
         function cleanDetail(value, id) {
             const profile = value && profileFor(value.profileRef);
             if (!value || !profile || value.assessmentId !== id || value.moduleId !== profile.moduleId ||
@@ -1009,6 +1153,29 @@
             }
             if (nextUnanswered) nextUnanswered.disabled = unansweredIndex(activeQuestion) === -1;
             if (nextUnresolved) nextUnresolved.disabled = unresolvedIndex(activeQuestion) === -1;
+            updateReviewInNavigation(!missing);
+        }
+        // Once every question is answered, or on the last question, the bar
+        // offers Review and submit as its main button instead of leaving a
+        // faint, disabled Next as the only way forward (#441 M5-02, #725).
+        function updateReviewInNavigation(allAnswered) {
+            if (!navigationNext || !navigationReviewSlot || !navigationReady) return;
+            const last = activeQuestion === questions.length - 1;
+            const offer = editable && acknowledged.status !== 'submitted' && (allAnswered || last);
+            if (offer && !navigationReview) {
+                navigationReview = button('Review and submit', openReview);
+                navigationReview.id = 'ncsc-navigation-review';
+                navigationReviewSlot.append(navigationReview);
+            } else if (!offer && navigationReview) {
+                navigationReview.remove(); navigationReview = null;
+            }
+            // On the last question Next has nowhere to go, so it leaves the bar;
+            // elsewhere it stays, as a secondary button once Review is offered.
+            navigationNext.hidden = last && !!navigationReview;
+            navigationNext.className = navigationReview ? 'dashboard-button dashboard-button-secondary' : 'dashboard-button';
+            const ready = allAnswered && !!navigationReview;
+            navigationReady.hidden = !ready;
+            navigationReady.textContent = ready ? 'All ' + questions.length + ' answered. Review and submit when ready.' : '';
         }
         // True while a save is running, or an automatic save is waiting for
         // the short pause and will be allowed to send this draft.
@@ -1140,7 +1307,7 @@
             const observationsOpen = !!(observations && observations.open && acknowledged &&
                 observations.dataset.assessmentId === acknowledged.assessmentId);
             const scrollX = win && win.scrollX, scrollY = win && win.scrollY;
-            questionProgress = null; progressArc = null; functionSteps = null; nextUnanswered = null; nextUnresolved = null; questionRegion = null;
+            questionProgress = null; progressArc = null; functionSteps = null; nextUnanswered = null; nextUnresolved = null; navigationNext = null; navigationReview = null; navigationReviewSlot = null; navigationReady = null; questionRegion = null;
             if (!acknowledged || acknowledged.status === 'submitted' || !editable) { reviewing = false; returnToReview = null; }
             // Keep the live region attached so asynchronous updates change an
             // existing accessible status rather than insert prefilled content.
@@ -1170,7 +1337,9 @@
             const dirty = dirtyEntries().length;
             // Keep draft feedback beside Save so changing status text cannot move its pointer target.
             status.hidden = editable && !!acknowledged && acknowledged.status !== 'submitted' && !reviewing;
-            status.textContent = statusText || (busy ? 'Saving your answers. ' + saved : loading ?
+            // Only a save of answers says "Saving your answers" (#699): creating the
+            // assessment, before anything is answered, says what it is doing.
+            status.textContent = statusText || (busy ? busyAction === 'create' ? 'Setting up your assessment.' : busyAction === 'submit' ? 'Submitting your answers.' : 'Saving your answers. ' + saved : loading ?
                 view === 'assessment' && !acknowledged ? 'Loading the selected assessment.' : 'Loading assessments.'
                 : savingNow() ? 'Saving…' : saved + (dirty ? 'Newer changes are not saved yet.' : ''));
             if (saveStatus && root.contains(saveStatus)) saveStatus.textContent = status.textContent;
@@ -1559,13 +1728,29 @@
                     const back = button('Return to review', resumeReview, 'dashboard-button dashboard-button-secondary'); back.id = 'ncsc-return-to-review';
                     controls.append(back);
                 }
-                controls.append(button('Review and submit', openReview, 'dashboard-text-button'));
+                // The main action below the question; Save is secondary while
+                // autosave is on, so this is the one primary button (#725).
+                controls.append(button('Review and submit', openReview, autosaveEnabled ? 'dashboard-button' : 'dashboard-button dashboard-button-secondary'));
             }
             content.append(controls);
             if (!sealed) renderDraftObservations(observationsOpen);
         }
         // Counts and navigation from acknowledged answers only. Never evaluate a
         // draft, infer a risk ranking, or reuse another assessment's baseline.
+        // Replace the saved-observations panel in place after a quiet save,
+        // keeping its open state; the question being answered is not rebuilt.
+        function refreshDraftObservations() {
+            const old = root.querySelector('.ncsc-draft-observations');
+            if (!old || !acknowledged || acknowledged.status === 'submitted' || !content.contains(old)) return;
+            const open = old.open && old.dataset.assessmentId === acknowledged.assessmentId;
+            const focused = old.contains(doc.activeElement) ? doc.activeElement.id : '';
+            renderDraftObservations(open);
+            const fresh = content.children[content.children.length - 1];
+            if (!fresh || fresh === old || fresh.className !== old.className) return;
+            content.removeChild(fresh);
+            old.replaceChildren(...Array.from(fresh.children)); old.open = open;
+            if (focused) { const target = old.querySelector('[id="' + focused + '"]'); if (target) target.focus({ preventScroll: true }); }
+        }
         function renderDraftObservations(expanded) {
             const panel = node('details', 'ncsc-guidance ncsc-draft-observations');
             panel.dataset.assessmentId = acknowledged.assessmentId; panel.open = expanded;
@@ -1580,7 +1765,7 @@
                 yes + ' answered Yes (self-reported, not verified).'));
             if (!saved) panel.append(node('p', '', 'No saved answers yet. Observations appear after answers are saved.'));
             [
-                ['Reported gaps', ['no', 'partial'], 'Check what is missing and agree a next step with your team or IT provider.'],
+                ['Reported gaps', ['no', 'partial'], 'Check what is missing and agree a next step with your team or No Fries.'],
                 ['Information to confirm', ['unknown'], 'Ask whoever looks after these systems what is in place.'],
                 ['Applicability to confirm', ['not_applicable'], 'These answers say the question does not apply. Check whether it really is outside this scope. They still count as not yet met.'],
                 ['Not answered in this save', [null], 'Answer these questions, or choose Unknown when you cannot confirm what is in place.']
@@ -1652,6 +1837,18 @@
                     (toConfirm ? ' ' + toConfirm + (toConfirm === 1 ? ' answer is' : ' answers are') + ' still to confirm (' + confirmBreakdown(toConfirm - notApplicable, notApplicable) +
                         '). You can submit with ' + (toConfirm === 1 ? 'it' : 'them') + ', but ' + (toConfirm === 1 ? 'it does' : 'they do') + ' not count as in place.' : ''));
             readiness.id = 'ncsc-review-readiness'; panel.append(readiness);
+            // Name each question that blocks submitting, with a jump to it (#669).
+            const incomplete = rows.filter(function (row) { return !row.option || row.missingRationale; });
+            if (incomplete.length) {
+                const jumps = node('ul', 'ncsc-review-jumps'); jumps.id = 'ncsc-review-jumps';
+                incomplete.forEach(function (row) {
+                    const item = node('li');
+                    item.append(button('Question ' + (row.index + 1) + ': ' + plainQuestion(row.question) + (row.option ? ' (needs an explanation)' : ''),
+                        function () { editFromReview(row.index); }, 'dashboard-text-button'));
+                    jumps.append(item);
+                });
+                panel.append(jumps);
+            }
             renderReviewRange(panel, rows, unanswered);
             const scope = node('section', 'ncsc-review-scope'); scope.append(node('h4', '', 'Assessment scope'), scopeText(acknowledged.scopePopulation.description));
             panel.append(scope);
@@ -1799,10 +1996,13 @@
             const gated = typeof options.detailsGate === 'function' ? options.detailsGate : content => content();
             // Keep the same gated anchor and keyboard focus while one shared probe settles.
             const availability = enquiryAvailable(win);
+            let offered = false;
             const resultHelp = (label, full = false) => {
                 const slot = node('div', full ? 'picture-next-steps-help' : 'ncsc-results-contact');
                 if (full && campaignOfferBridge[campaign]) slot.append(node('p', '', campaignOfferBridge[campaign]));
-                slot.append(gated(() => {
+                slot.append(node('p', 'picture-offer', MANAGED_SECURITY_OFFER));
+                // The link only opens the public contact page, so it is not behind the details gate.
+                slot.append((() => {
                     const link = node('a', 'dashboard-button');
                     function show(available) {
                         link.textContent = available ? 'Fix these with No Fries' : 'Email hello@nofries.nz';
@@ -1812,14 +2012,16 @@
                     show(false);
                     availability.then(available => { if (live()) show(available); });
                     return link;
-                }));
+                })());
+                const pricing = node('a', '', 'See pricing and what’s included'); pricing.href = '/pricing#pricing-pilot';
+                slot.append(pricing);
                 return slot;
             };
             function appendBoardSummary() {
                 const section = node('section', 'ncsc-board-next-step picture-summary');
                 const copied = node('p', 'dashboard-muted'); copied.setAttribute('role', 'status');
                 section.append(node('h3', '', 'Summary for your board or insurer'),
-                    boardExportGate(() => boardSummaryBlock(node, button, win, acknowledged, metadata, 'ncsc-board-summary', copied, undefined, undefined, topGaps(results, metadata))), copied);
+                    boardExportGate(() => boardSummaryBlock(node, button, win, acknowledged, metadata, 'ncsc-board-summary', copied, undefined, undefined, topGaps(results, metadata), previousSubmission())), copied);
                 if (campaign === 'board' && topGaps(results, metadata, 1).length) {
                     section.append(node('p', '', 'Use a reported gap to agree a next action, an owner and a date with your board.'),
                         button('Go to your top gaps', function () {
@@ -1842,16 +2044,18 @@
                     node('li', '', 'Check payment and bank-detail changes using a known phone number or another trusted, separate route. Do not use contact details from the new request.'),
                     node('li', '', 'Record who confirmed the details and when. If you cannot confirm the change, do not pay yet.'));
                 section.append(paymentChecks);
-                panel.append(section, resultHelp('', true));
+                panel.append(section, resultHelp('', true)); offered = true;
             }
             const questionnaireFirst = campaign === 'insurance' || campaign === 'supplier';
             if (questionnaireFirst) renderQuestionnaireAnswers(panel);
             if (questionnaireFirst && campaign === 'insurance') appendBoardSummary();
             if (results) {
-                panel.append(rankedGapSection(node, results, metadata, 'ncsc-results-top-gaps', gap => [resultHelp(gap.title)]));
+                // #657: one offer block straight after the gaps, not a button on every gap.
+                panel.append(rankedGapSection(node, results, metadata, 'ncsc-results-top-gaps', undefined, undefined, gapHelp(doc)));
+                if (!offered) { panel.append(resultHelp('', true)); offered = true; }
             }
             if (results && options.appendFrameworkComparison) options.appendFrameworkComparison(panel);
-            renderNextSteps(panel);
+            renderNextSteps(panel, results ? topGaps(results, metadata) : undefined);
             // The board or insurer summary is on Results for every visit, not only
             // when a board or insurance campaign tag survived sign-up (#441 G04).
             if (results && campaign !== 'board' && campaign !== 'insurance') appendBoardSummary();
@@ -1886,7 +2090,7 @@
             if (typeof options.openImprovement === 'function' && planSource) {
                 const follow = node('section', 'ncsc-plan-followup');
                 follow.append(node('h3', '', 'Follow up on this assessment'));
-                const preview = node('details'), steps = providerSummary(acknowledged, metadata).items;
+                const preview = node('details'), steps = providerSummary(acknowledged, metadata, results ? topGaps(results, metadata) : undefined).items;
                 preview.append(node('summary', '', 'Assessment follow-ups (' + steps.length + ')'));
                 const list = node('ol');
                 steps.forEach(step => {
@@ -1923,7 +2127,7 @@
                     }); detail.append(item);
                 }); panel.append(detail);
             });
-            panel.append(campaign === 'scam' ? resultHelp('Results summary') : resultHelp('', true));
+            if (!offered) panel.append(resultHelp('', true));
         }
         // Show the reported (lower) figure first; the upper figure follows in a plain sentence.
         function leadWithLowerBound(card, valueSelector, model) {
@@ -1933,20 +2137,20 @@
             const upTo = node('p', 'ncsc-result-upper', 'Up to ' + model.upperDisplay + ' if every answer still to confirm turns out to be in place.');
             const children = Array.from(card.children); children.splice(children.indexOf(value) + 1, 0, upTo); card.replaceChildren.apply(card, children);
         }
-        function renderNextSteps(panel) {
+        function renderNextSteps(panel, gaps) {
             const section = node('section', 'ncsc-next-steps'); section.append(node('h3', '', 'Suggested follow-ups'));
             const countOf = function (ids) { return questions.filter(function (question) { return ids.includes(answerGroup(savedAnswer(question.id).optionId)); }).length; };
             const toFix = countOf(['no', 'partial']), toCheck = countOf(['unknown', 'not_applicable']);
             const plural = function (n, one, many) { return n + ' ' + (n === 1 ? one : many); };
             // One plain verdict before any percentages. The list follows answer groups, not risk.
             if (toFix || toCheck) section.append(node('p', 'ncsc-verdict', 'You have ' + plural(toFix, 'gap', 'gaps') + ' to fix and ' + plural(toCheck, 'answer', 'answers') + ' to check.'));
-            if (toCheck) section.append(node('p', 'dashboard-muted', 'No IT provider? Ask whoever looks after your computers and accounts, or a local IT support business, to check these with you.'));
-            const list = node('ol'), summary = providerSummary(acknowledged, metadata);
+            if (toCheck) section.append(node('p', 'dashboard-muted', 'Not sure who to ask? No Fries can check these with you.'));
+            const list = node('ol'), summary = providerSummary(acknowledged, metadata, gaps);
             summary.items.forEach(function (entry) {
-                const item = node('li'); item.append(node('strong', '', entry.title), node('p', 'dashboard-muted', entry.owner), node('p', '', entry.action)); list.append(item);
+                const item = node('li'); item.append(node('strong', '', entry.title)); if (entry.owner) item.append(node('p', 'dashboard-muted', entry.owner)); item.append(node('p', '', entry.action)); list.append(item);
             });
             const followUpCount = list.children.length;
-            if (followUpCount) section.append(node('p', '', 'Suggested follow-ups: ' + followUpCount + (isV2(metadata) ? '. Grouped by your answer (No, then Partial, then Unknown, then Not applicable). Your top gaps above show the priority order.' : '. Gaps come first, in the same order as your top gaps, then answers to check.')));
+            if (followUpCount) section.append(node('p', '', 'Suggested follow-ups: ' + followUpCount + '. Your top gaps come first, in the same order, then other gaps and answers to check.'));
             if (followUpCount > 3) Array.prototype.forEach.call(list.children, function (item, index) { if (index >= 3) item.hidden = true; });
             section.append(list);
             if (followUpCount > 3) {
@@ -1959,14 +2163,17 @@
                 }, 'dashboard-button dashboard-button-secondary');
                 section.append(more);
             }
-            if (!followUpCount) section.append(node('p', '', 'You answered Yes throughout. Check these answers with your IT provider and agree when to review them.'));
-            const handoff = node('details'); handoff.append(node('summary', '', 'Summary to share with your IT provider'));
+            if (!followUpCount) section.append(node('p', '', 'You answered Yes throughout. No Fries can check these answers with you and agree when to review them.'));
+            const handoff = node('details'); handoff.append(node('summary', '', 'Summary to share with whoever is fixing these'));
             const label = node('label', '', 'Copy this summary into an email or document'); label.htmlFor = 'ncsc-provider-summary';
             const input = node('textarea', 'ncsc-textarea'); input.id = label.htmlFor; input.readOnly = true; input.rows = 8; input.value = summary.text; handoff.append(label, input);
             const copied = node('p', 'dashboard-muted'); copied.setAttribute('role', 'status');
             const copy = button('Copy summary', function () { copySummary(win, input, copied); }, 'dashboard-button dashboard-button-secondary');
             handoff.append(copy);
-            if (win && typeof win.print === 'function') handoff.append(button('Print these results', function () { win.print(); }, 'dashboard-button dashboard-button-secondary'));
+            // Paper gets the summary itself, not the whole dashboard (#662): title,
+            // scope, date and the follow-ups, with no navigation or account details.
+            const printed = node('pre', 'picture-summary-print', summary.text); printed.setAttribute('aria-hidden', 'true'); handoff.append(printed);
+            if (win && typeof win.print === 'function') handoff.append(button('Print these results', function () { printOnly(win, printed); }, 'dashboard-button dashboard-button-secondary'));
             handoff.append(copied); section.append(handoff); panel.append(section);
         }
         function renderQuestionnaireAnswers(panel) {
@@ -2000,7 +2207,7 @@
                 const input = node('textarea', 'ncsc-textarea'); input.id = label.htmlFor; input.readOnly = true; input.rows = 5; input.value = report.text;
                 const copied = node('p', 'dashboard-muted'); copied.setAttribute('role', 'status');
                 controls.append(label, input, button('Copy answers', function () { copySummary(win, input, copied); }, 'dashboard-button dashboard-button-secondary'));
-                if (win && typeof win.print === 'function') controls.append(button('Print answers', function () { win.print(); }, 'dashboard-button dashboard-button-secondary'));
+                if (win && typeof win.print === 'function') controls.append(button('Print answers', function () { printOnly(win, section); }, 'dashboard-button dashboard-button-secondary'));
                 controls.append(copied);
                 if (gated) section.setAttribute('data-export-ready', 'true');
                 return controls;
@@ -2145,7 +2352,14 @@
             const next = button('Next question', function () {
                 if (questionRegion.contains(next) && activeQuestion < questions.length - 1) { activeQuestion += 1; renderAssessmentQuestion(); }
             }); next.disabled = activeQuestion === questions.length - 1;
-            const navigationActions = node('div', 'ncsc-navigation-actions'); navigationActions.append(previous, next);
+            // Fixed slots, filled by updateReviewInNavigation, so nothing in the
+            // bar is moved (and focus is kept) when the last answer arrives.
+            const reviewSlot = node('span', 'ncsc-navigation-review-slot');
+            const ready = node('p', 'ncsc-navigation-ready'); ready.id = 'ncsc-navigation-ready'; ready.hidden = true;
+            ready.setAttribute('role', 'status');
+            const navigationActions = node('div', 'ncsc-navigation-actions'); navigationActions.append(previous, next, reviewSlot);
+            nav.append(ready);
+            navigationNext = next; navigationReview = null; navigationReviewSlot = reviewSlot; navigationReady = ready;
             // On narrow screens the bar sticks to the bottom of the screen with
             // Previous and Next; the two jump buttons sit behind More. Wider
             // screens show all four and no More button. DOM order is the tab order.
@@ -2345,7 +2559,11 @@
                     else { input.removeAttribute('aria-invalid'); input.setAttribute('aria-describedby', SCOPE_DESCRIBED_BY); }
                 }
             }
-            if (questionRegion && acknowledged) renderQuestion();
+            // Repaint the question only when its errors change; a clean check
+            // before each autosave must not rebuild the tiles being tapped (#699).
+            const errorKey = JSON.stringify(errors);
+            if (questionRegion && acknowledged && (errorKey !== renderedErrorKey || focus)) renderQuestion();
+            renderedErrorKey = errorKey;
             if (focus && errors.length) errorBox.focus();
         }
         function planBatches(entries) {
@@ -2464,7 +2682,7 @@
             if (!live() || busy || pending && !retry) return false;
             const expected = epoch;
             if (!retry) pending = { command: command, captures: captures, uncertain: false, keepalive: keepalive === true };
-            const operation = pending; busy = true; statusText = '';
+            const operation = pending; busy = true; busyAction = operation && operation.command ? operation.command.action : null; statusText = '';
             const focusBeforeMutation = doc.activeElement;
             operation.restoreSave = focusBeforeMutation && (focusBeforeMutation.id === 'ncsc-save' || focusBeforeMutation.id === 'ncsc-save-status');
             // Keep Save mounted while a request runs; a second press cannot hit a replacement control.
@@ -2516,7 +2734,15 @@
                 if (live(expected)) {
                     const focusFailure = failed && (doc.activeElement === heading || doc.activeElement === status || doc.activeElement === saveStatus) && !leave && view !== 'denied';
                     const restoreSave = operation.restoreSave && doc.activeElement === saveStatus;
-                    busy = false; render();
+                    busy = false;
+                    // A confirmed background save changes nothing on the question
+                    // being answered, so update the status and progress in place.
+                    // Rebuilding the question here replaced its answer tiles and
+                    // Next button mid-tap on slow phones, and the tap was lost
+                    // (#699 M4-04).
+                    const quiet = !failed && command.action === 'save' && !pending && !conflict && !operation.uncertain &&
+                        view === 'assessment' && !reviewing && !leave && !submitPrompt && !errors.length && questionRegion && root.contains(questionRegion);
+                    if (quiet) { updateStatus(); updateQuestionNavigation(); refreshDraftObservations(); } else render();
                     if (!failed && command.action === 'save' && !pending && !conflict && dirtyEntries().length) scheduleAutosave(flushQueued ? 0 : undefined);
                     else flushQueued = false;
                     if (restoreSave && !pending && !conflict) { const save = root.querySelector('[id="ncsc-save"]'); if (save && !save.disabled) save.focus({ preventScroll: true }); }
@@ -2557,7 +2783,9 @@
         }
         function renderPending() {
             const panel = node('section', 'ncsc-warning');
-            panel.append(node('h3', '', busy ? 'Saving your answers' : 'We could not confirm the save'), node('p', '', busy ? 'Please wait and do not submit again. Your answers stay on this page until the save finishes.' : 'Your answers are still on this page. Use the retry button below; do not start again.'));
+            const creating = busyAction === 'create';
+            panel.append(node('h3', '', busy ? creating ? 'Setting up your assessment' : 'Saving your answers' : 'We could not confirm the save'),
+                node('p', '', busy ? creating ? 'Please wait a moment. Your scope stays on this page until it finishes.' : 'Please wait and do not submit again. Your answers stay on this page until the save finishes.' : 'Your answers are still on this page. Use the retry button below; do not start again.'));
             if (!busy) panel.append(button('Try the save again', function () { if (pending && !busy) perform(pending.command, pending.captures, true); }));
             content.append(panel);
         }
@@ -2676,5 +2904,5 @@
         else openAssessment(initialAssessmentId);
         return controller;
     }
-    return Object.freeze({ mount: mount, topGaps, confirmNext, v2Shortfall, rankedGapSection, resultModel: resultModel, providerSummary: providerSummary, boardSummary: boardSummary, questionnaireAnswers: questionnaireAnswers, resultsCampaign: resultsCampaign, boardSummaryBlock: boardSummaryBlock, managedSecurityOffer: managedSecurityOffer, copySummary: copySummary, enoughAnswersToEstimate: enoughAnswersToEstimate });
+    return Object.freeze({ mount: mount, consultantViewer, gapHelp, managedSecurityPrice: MANAGED_SECURITY_PRICE, gapWhy, topGaps, confirmNext, v2Shortfall, rankedGapSection, resultModel: resultModel, providerSummary: providerSummary, boardSummary: boardSummary, questionnaireAnswers: questionnaireAnswers, resultsCampaign: resultsCampaign, boardSummaryBlock: boardSummaryBlock, printOnly: printOnly, managedSecurityOffer: managedSecurityOffer, copySummary: copySummary, enoughAnswersToEstimate: enoughAnswersToEstimate });
 }));

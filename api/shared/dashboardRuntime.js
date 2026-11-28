@@ -22,6 +22,7 @@ const { prepareRequest, paidRequest, PaidAssessmentError } = require('./assessme
 const { ContactRequestError, normaliseContactRequest, writeContactRequest } = require('./contactRequests');
 
 const { representativeDetails, RepresentativeDetailsError } = require('./customerSignup/deferredRepresentativeDetails');
+const { organisationProfile, OrganisationProfileError } = require('./organisationProfile/organisationProfileService');
 const denied = () => new DashboardPersistenceError('access_denied', 403);
 const unavailable = () => new DashboardPersistenceError('unavailable', 503);
 const ncscDenied = () => new NcscAssessmentError('ncsc_access_denied', 403);
@@ -35,6 +36,7 @@ function createDashboardResourceRuntime(options) {
     const paidFrameworksEnabled = options.paidFrameworksEnabled === true;
     const contactRequestsEnabled = options.contactRequestsEnabled === true;
     const representativeDetailsEnabled = options.representativeDetailsEnabled === true;
+    const organisationProfileEnabled = options.organisationProfileEnabled === true;
     const queueClock = options.clock;
     const requests = new WeakMap();
     // Correlation only. Authority and active SQL handles never enter this store.
@@ -177,8 +179,18 @@ function createDashboardResourceRuntime(options) {
                 } catch (error) { throw error instanceof RepresentativeDetailsError ? error : new RepresentativeDetailsError(); }
                 finally { if (pair) pair.finish(); }
             }
+            async function profile(input) {
+                let pair;
+                try {
+                    pair = binding.createOperation(input === undefined ? 'organisation.profile.read' : 'organisation.profile.write', context);
+                    const result = await organisationProfile({ database: pair.database, clock: pair.clock, audit: pair.audit, context }, input);
+                    pair.clock(); return result;
+                } catch (error) { throw error instanceof OrganisationProfileError ? error : new OrganisationProfileError(); }
+                finally { if (pair) pair.finish(); }
+            }
             return Object.freeze({
                 requestContext,
+                ...(organisationProfileEnabled ? { organisationProfile: profile } : {}),
                 ...(paidFrameworksEnabled ? { async paid(route, body, cursor, onDisclosure) {
                     const request = prepareRequest(route, body, cursor);
                     const pair = binding.createOperation(body === undefined ? 'framework.read' : 'framework.write', context, request.profileRef);

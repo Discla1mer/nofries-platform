@@ -125,6 +125,18 @@ test('the privacy notice describes dashboard contact requests and their retentio
     expect(section).not.toBeNull();
     expect(section[1]).toContain('If you ask No Fries to contact you from your dashboard, we record the request (your organisation, your sign-in, the topic and the date). No Fries staff use your sign-in email address and a summary of your results to contact you about it. We don’t use it for marketing. We keep contact requests for 24 months.');
     expect(privacy).toContain('<li><a href="#contact-requests">Contact requests</a></li>');
-    expect(privacy).toContain('Last updated: 19 November 2026.');
+    expect(privacy).toContain('Last updated: 28 November 2026.');
     expect(privacy.indexOf('id="contact-requests"')).toBeLessThan(privacy.indexOf('id="staff-workspaces"'));
+});
+
+test('the privacy notice states New Zealand storage and the Australian sign-in identity exactly (NZ move, 28 Nov 2026)', () => {
+    const privacy = require('node:fs').readFileSync(require('node:path').join(__dirname, '../privacy.html'), 'utf8');
+    expect(privacy).toContain('your assessment data is stored in New Zealand');
+    expect(privacy).toContain('Microsoft Entra External ID keeps your sign-in identity in Australia.');
+    expect(privacy).toContain('stay in Azure Australia East until 5 December 2026 and are then deleted');
+    expect(privacy).not.toMatch(/access-control records (?:are in|use) private Azure Storage in Australia East/);
+    expect(privacy).not.toMatch(/all (?:your |customer )?data/i);
+    const home = require('node:fs').readFileSync(require('node:path').join(__dirname, '../index.html'), 'utf8');
+    expect(home).toContain('Your assessment data is stored in New Zealand.');
+    expect(home).not.toMatch(/all (?:your |customer )?data is stored/i);
 });

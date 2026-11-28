@@ -377,8 +377,14 @@
                 } else card.append(node('p', '', gaps.querySelector('p').textContent));
             } else card.append(node('p', '', 'A first gap is only available for a submitted assessment with results.'));
             if (!actions.total) {
-                const empty = node('p', 'picture-actions-empty', 'No actions yet. ');
-                const start = detail && v2Profile(selectedMetadata()) ? 'Start with your top gaps.' : 'Start with your top three gaps.';
+                // #719: gaps listed just above are things to do, so "No actions yet" read as a
+                // contradiction. Say what is missing (a saved plan action) and how to add one.
+                const listed = Boolean(gaps && detail && displayedGaps.length);
+                const empty = node('p', 'picture-actions-empty', listed
+                    ? 'No improvement-plan actions saved yet. ' + (planGap && improvementSelection() ? 'Use Plan this on a gap' : 'Open the Improvement Plan') +
+                        ' to give a gap an owner and a date. ' : 'No actions yet. ');
+                const start = listed ? (v2Profile(selectedMetadata()) ? 'Go to your top gaps.' : 'Go to your top three gaps.')
+                    : detail && v2Profile(selectedMetadata()) ? 'Start with your top gaps.' : 'Start with your top three gaps.';
                 if (gaps) {
                     const link = node('a', '', start); link.href = '#' + id + '-top-gaps';
                     link.addEventListener('click', event => {
@@ -516,14 +522,19 @@
             }
             if (isEmpty) {
                 // A new organisation leads with one plain action, before any detail.
+                // #724: a consultant is not the organisation's owner, so the copy says "this organisation".
+                const forClient = questionnaire.consultantViewer(doc);
+                const startLabel = forClient ? 'Start this organisation\'s cyber check' : 'Start your cyber check';
                 const empty = node('section', 'picture-first-use');
                 const art = node('img', 'picture-illustration'); art.src = '/images/illustrations/overview-empty.webp'; art.alt = '';
                 empty.append(art, node('p', 'picture-first-use-eyebrow', 'Welcome to No Fries'),
-                    node('h2', '', 'Start your cyber check'),
-                    node('p', 'picture-first-use-intro', 'No saved assessments yet. Answer questions about your business to see where you stand and what to fix first.'));
+                    node('h2', '', startLabel),
+                    node('p', 'picture-first-use-intro', forClient
+                        ? 'No saved assessments yet. Answer questions about this organisation to see where it stands and what to fix first.'
+                        : 'No saved assessments yet. Answer questions about your business to see where you stand and what to fix first.'));
                 if (typeof options.openCyber === 'function') {
                     const token = epoch;
-                    const action = button('Start your cyber check', () => {
+                    const action = button(startLabel, () => {
                         if (live(token) && !loading && !message && !rows.length && !selected && after === null &&
                             action.parentElement === empty && empty.parentElement === root) options.openCyber(undefined, { startNew: true });
                     });
@@ -531,9 +542,9 @@
                 }
                 const steps = node('ol', 'picture-first-use-steps'); steps.setAttribute('role', 'list');
                 [
-                    ['Answer the questions', 'Tell us what is in place for the part of your business you choose.'],
-                    ['See your results', 'Submit your answers to see where you stand.'],
-                    ['Fix the gaps', 'Get your top three gaps and plan what to do next.']
+                    ['Answer the questions', forClient ? 'Tell us what is in place for the part of the organisation you choose.' : 'Tell us what is in place for the part of your business you choose.'],
+                    ['See your results', forClient ? 'Submit the answers to see where the organisation stands.' : 'Submit your answers to see where you stand.'],
+                    ['Fix the gaps', forClient ? 'See the top gaps and plan what to do next.' : 'Get your top gaps and plan what to do next.']
                 ].forEach((step, index) => {
                     const item = node('li', 'picture-first-use-step');
                     const number = node('span', 'picture-first-use-number', String(index + 1));
@@ -603,7 +614,11 @@
                 attainment: result.attainment, total: result.total,
                 answered: new Set(result.domains.flatMap(domain => domain.controls.flatMap(control => control.questions))
                     .filter(answered).map(question => question.itemId)),
-                domains: result.domains.map(domain => ({ title: domain.title, attainment: domain.attainment })) };
+                domains: result.domains.map(domain => ({ title: domain.title, attainment: domain.attainment })),
+                // Each saved answer by question, so Compare can list the answers
+                // behind a changed figure (#731).
+                answers: new Map(result.domains.flatMap(domain => domain.controls.flatMap(control => control.questions.map((question, index) =>
+                    [question.itemId, { answer: question.answer, title: control.questions.length > 1 ? control.title + ' (question ' + (index + 1) + ')' : control.title }])))) };
         }
         function trendSection(result) {
             const section = node('section', 'picture-trend'), key = epoch + ':' + detail.assessmentId;
@@ -680,6 +695,14 @@
             if (trend.total === 1) {
                 section.append(node('p', '', trend.otherProfiles ? 'This is the only submitted assessment with this set of questions so far. Another submitted assessment with the same questions is needed to compare saved results and answer coverage.'
                     : 'This is the only submitted assessment so far. Another submitted assessment is needed to compare saved results and answer coverage.'));
+                // #719: say what a second assessment is for and where to start one. With a
+                // saved assessment the host opens the assessment list, not a blank form,
+                // so the button is named for where it goes.
+                section.append(node('p', 'dashboard-muted', 'A second assessment shows whether the gaps you worked on have closed. Repeat the check in six to twelve months, or after a big change such as switching IT providers. You can start another from your assessments.'));
+                if (typeof options.openCyber === 'function') {
+                    const token = epoch, again = button('Go to your assessments', () => { if (live(token)) options.openCyber(undefined); });
+                    again.classList.add('dashboard-button-secondary'); section.append(again);
+                }
                 if (after !== null) section.append(node('p', 'dashboard-muted', 'Other saved assessments may not be loaded yet. Load more to include them.'));
                 return heading;
             }
@@ -699,11 +722,16 @@
                 section.append(node('p', 'picture-trend-coverage', 'Question coverage: ' + earlier + ' ' +
                     previous.answered.size + ' of ' + previous.total + '; selected ' + current.answered.size + ' of ' + current.total +
                     ' answered Yes, Partial or No. ' + shared + ' questions have one of these answers in both. Unknown and Not applicable answers stay unresolved.'));
-                section.append(node('p', 'ncsc-warning', 'Not comparable as improvement or decline: ' +
-                    (previous.scope !== current.scope ? 'the saved scope declarations differ.'
-                        : 'matching saved scope descriptions do not establish the same real-world population.') +
+                // One message from one comparability state (#441 M6-01, #731): the
+                // question set is always the same here (other sets are left out
+                // above), so say that once, then why no change is calculated.
+                const count = selectedMetadata().questions.length;
+                section.append(node('p', 'ncsc-warning', (trend.v2 ? 'Same ' + count + ' questions and weights in both'
+                    : 'Same accepted questions and weights in both') +
+                    (previous.scope !== current.scope ? ', but your business details (scope) differ, so this is not a measure of improvement or decline.'
+                        : ' and the same saved scope description. That still does not show the same real-world setup, so this is not a measure of improvement or decline.') +
                     (!sameCoverage ? ' The set of questions answered Yes, Partial or No also differs.' : '') +
-                    ' Saved ranges are shown separately; no change is calculated.'));
+                    ' Saved results are shown side by side; no change is calculated.'));
                 const table = node('table', 'picture-trend-table');
                 table.append(node('caption', '', 'Reported implementation, ' + earlier.toLowerCase() + ' and selected'));
                 const head = node('thead'), headRow = node('tr');
@@ -717,9 +745,19 @@
                 };
                 line('Overall', previous, current);
                 current.domains.forEach((domain, position) => line(domain.title, previous.domains[position], domain));
-                table.append(head, body); section.append(table,
-                    node('p', 'dashboard-muted', (trend.v2 ? 'Both saved results use the same set of questions and question weights.'
-                        : 'Both saved results use the accepted profile and included question weights.') + ' Shared question coverage is not proof of equivalent scope, control effectiveness or a risk trend. Unknown and Not applicable answers still add to the higher figure; no subset is re-scored.'));
+                table.append(head, body); section.append(table);
+                // The answers behind any changed figure, in question order.
+                const changed = [...current.answers].filter(([itemId, now]) => previous.answers.has(itemId) && previous.answers.get(itemId).answer !== now.answer);
+                section.append(node('h4', '', 'Answers that changed'));
+                if (changed.length) {
+                    const list = node('ul', 'picture-trend-changes');
+                    changed.forEach(([itemId, now]) => {
+                        const item = node('li', '', now.title + ': ' + previous.answers.get(itemId).answer + ' → ' + now.answer);
+                        item.dataset.itemId = itemId; list.append(item);
+                    });
+                    section.append(list);
+                } else section.append(node('p', 'picture-trend-changes-none', 'No answers changed.'));
+                section.append(node('p', 'dashboard-muted', 'Shared question coverage is not proof of equivalent scope, control effectiveness or a risk trend. Unknown and Not applicable answers still add to the higher figure; no subset is re-scored.'));
             }
             section.append(node('h4', '', 'Submitted assessments'));
             const list = node('ol', 'picture-trend-history');
@@ -737,10 +775,7 @@
         }
         function gapSection(result) {
             const section = questionnaire.rankedGapSection(node, result, selectedMetadata(), id + '-top-gaps',
-                gap => planGap && improvementSelection() ? gapPlanControls(gap) : [], displayedGaps);
-            for (const owner of section.querySelectorAll('.picture-gap-owner')) {
-                if (owner.textContent === 'Ask your IT provider to help with this.') owner.remove();
-            }
+                gap => planGap && improvementSelection() ? gapPlanControls(gap) : [], displayedGaps, questionnaire.gapHelp(doc));
             if (section.querySelector('ol')) section.append(helpPanel());
             return section;
         }
@@ -836,7 +871,7 @@
             handoff.append(node('summary', '', 'Copy or print a summary'));
             const label = node('label', '', 'Copy this summary into an email or document');
             const input = node('textarea', 'ncsc-textarea'); input.id = id + '-summary'; label.htmlFor = input.id;
-            input.readOnly = true; input.rows = 8; input.value = questionnaire.providerSummary(detail, selectedMetadata()).text;
+            input.readOnly = true; input.rows = 8; input.value = questionnaire.providerSummary(detail, selectedMetadata(), displayedGaps).text;
             // The field scrolls on screen, so paper gets the full text instead.
             const printed = node('pre', 'picture-summary-print', input.value); printed.setAttribute('aria-hidden', 'true');
             const status = node('p', 'dashboard-muted'); status.setAttribute('role', 'status');
@@ -849,7 +884,7 @@
                     if (!live(token)) return boardBlock;
                     return questionnaire.boardSummaryBlock(node, button, win, detail, selectedMetadata(),
                         id + '-board-summary', status, boardBlock,
-                        (board, printed, copy, print) => boardPlanControls(handoff, boardBlock, board, printed, copy, print), displayedGaps);
+                        (board, printed, copy, print) => boardPlanControls(handoff, boardBlock, board, printed, copy, print), displayedGaps, previousSubmission());
                 };
                 if (options.boardExportGate) handoff.append(options.boardExportGate(() => boardExport(node('div', 'picture-board-summary'))));
                 else if (typeof options.readBoardPlan === 'function' && typeof options.openAction === 'function') {
@@ -857,21 +892,46 @@
                 } else boardExport(handoff);
             }
             if (win && typeof win.print === 'function') {
-                const printButton = button('Print these results', () => win.print());
+                // Paper gets the summary alone, not the whole dashboard (#662).
+                const printButton = button('Print these results', () => typeof questionnaire.printOnly === 'function' ? questionnaire.printOnly(win, printed) : win.print());
                 printButton.classList.add('dashboard-button-secondary'); handoff.append(printButton);
             }
             handoff.append(status); return handoff;
+        }
+        // #733: the submitted assessment just before this one, on the same
+        // questions, read once per view so the board summary can say it
+        // supersedes it. Skipped while other pages are unloaded, because an
+        // unseen submission could fall between the two.
+        let previousRead = null;
+        function previousSubmission() {
+            const key = epoch + ':' + detail.assessmentId;
+            if (previousRead && previousRead.key === key) return previousRead.promise;
+            const token = epoch, submittedAt = Date.parse(detail.updatedAt);
+            const earlier = after !== null ? [] : rows.filter(row => row.status === 'submitted' && row.assessmentId !== detail.assessmentId &&
+                sameProfile(row.profileRef, detail.profileRef) && Date.parse(row.updatedAt) < submittedAt).sort(newestFirst);
+            const promise = !earlier.length ? Promise.resolve(null) : call('read', earlier[0].assessmentId, token).then(response => {
+                const value = response && response.assessment;
+                return value && value.assessmentId === earlier[0].assessmentId && value.status === 'submitted' &&
+                    sameProfile(value.profileRef, detail.profileRef) ? value : null;
+            }, error => {
+                // A refusal clears the picture, as Compare does; other failures leave the summary as shown.
+                if (live(token) && refused(error)) { abort(); epoch++; failure({ statusCode: 403 }, null); render(); }
+                return null;
+            });
+            previousRead = { key, promise };
+            return promise;
         }
         function boardPlanControls(handoff, boardBlock, board, boardPrinted, boardCopy, boardPrint) {
             if (typeof options.readBoardPlan !== 'function' || typeof options.openAction !== 'function') return;
             const source = improvementSelection(), token = epoch, binding = sourceBinding();
             if (!source) return;
-            const baseText = board.value, assignments = node('section', 'picture-board-actions');
+            let baseText = board.value, lastExtra = '';
+            const assignments = node('section', 'picture-board-actions');
             const note = node('p', 'dashboard-muted'); note.setAttribute('role', 'status');
             boardBlock.append(assignments, note);
             let attempt = 0;
             const current = () => currentSubmitted(token, binding, board);
-            const setText = extra => { board.value = baseText + extra; boardPrinted.textContent = board.value; };
+            const setText = extra => { lastExtra = extra; board.value = baseText + extra; boardPrinted.textContent = board.value; };
             const lock = busy => { boardCopy.disabled = busy; if (boardPrint) boardPrint.disabled = busy; };
             lock(true);
             async function checkAssignments() {
@@ -934,6 +994,8 @@
             handoff.addEventListener('toggle', checkAssignments);
             // A gate may release its content after the disclosure is already open.
             if (handoff.open) Promise.resolve().then(checkAssignments);
+            // #733: the summary text can gain its supersedes lines later; keep the saved owners after it.
+            return text => { baseText = text; setText(lastExtra); };
         }
         // Lead with the reported (lower) figure and explain both figures in plain words.
         function leadWithLowerBound(card, model) {

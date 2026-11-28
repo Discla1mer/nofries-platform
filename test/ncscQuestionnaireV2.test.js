@@ -67,7 +67,7 @@ async function backend(createWith = NCSC_V2_CONTEXT, settings = {}) {
         return reply(response.body, response.status);
     });
     const profileMetadata = settings.profileMetadata === undefined ? [V2()] : settings.profileMetadata;
-    return { fetch, versions, organisationId: fixture.scope.organisationId,
+    return { fetch, versions, clock, organisationId: fixture.scope.organisationId,
         client: clientModule.createClient({ metadata: V1(), ...(profileMetadata ? { profileMetadata } : {}), fetch }),
         execute: command => repository.executeNcscAssessment(context, command) };
 }
@@ -149,7 +149,7 @@ describe('v2 results in the questionnaire', () => {
         expect(panel.textContent).toContain('Saved answer: Sometimes, but not written down or checked. Weight: 2.');
         const report = questionnaire.questionnaireAnswers(assessment, V2());
         const output = panel.querySelector('.ncsc-questionnaire-answers');
-        expect(output.querySelectorAll('li')).toHaveLength(11);
+        expect(output.querySelectorAll('li')).toHaveLength(12);
         expect(output.querySelector('textarea').value).toBe(report.text);
         expect(output.textContent).toContain(report.footer);
         // 9 graded part-credit answers and 5 No: 14 gaps to fix, 2 "I don't know" to check.
@@ -158,17 +158,24 @@ describe('v2 results in the questionnaire', () => {
     });
 
     test.each([['yes', 'Yes'], ['partly', 'Partly'], ['ad_hoc', 'Partly'], ['no', 'No'],
-        ['unknown', 'Not answered'], ['not_applicable', 'Not answered']])('insurer answers use the v2 source question and its own option: %s', (saved, expected) => {
+        ['unknown', 'Not confirmed'], ['not_applicable', 'Marked not applicable']])('insurer answers use the v2 source question and its own option: %s', (saved, expected) => {
         const md = V2(), assessment = { status: 'submitted', profileRef: md.profileRef,
             scopePopulation: { description: 'Fictional office' }, responses: md.questions.map(q => ({ itemId: q.id, optionId: saved })) };
         const report = questionnaire.questionnaireAnswers(assessment, md), byId = Object.fromEntries(report.items.map(row => [row.id, row]));
-        for (const id of ['mfa', 'backup-storage', 'restore-tests', 'training', 'incident-plan', 'admin-rights', 'payment-checks', 'supplier-access', 'email-protection']) {
+        for (const id of ['mfa', 'backup-storage', 'restore-tests', 'patch-speed', 'training', 'incident-plan', 'admin-rights', 'payment-checks', 'assets', 'supplier-access', 'email-protection']) {
             expect(byId[id].answer).toBe(expected);
             expect(byId[id].question).toMatch(/\?$/);
             if (saved === 'ad_hoc') expect(byId[id].basis).toContain('Sometimes, but not written down or checked');
         }
-        expect(byId['patch-speed'].answer).toBe('Not answered'); // PA does not ask for a deadline.
-        expect(byId.endpoint.answer).toBe('Not answered'); // Alerts do not attest EDR coverage.
+        // #702: patch speed answers from "kept up to date" and says the deadline still needs confirming;
+        // v2 has no EDR question, so EDR says so rather than reading as a blank.
+        if (!['unknown', 'not_applicable'].includes(saved)) expect(byId['patch-speed'].basis).toContain("did not ask for your insurer's deadline");
+        expect(byId['patch-speed'].question).toContain('deadline');
+        expect(byId.endpoint.answer).toBe('Not covered by this check');
+        expect(byId.endpoint.basis).toBe('This check does not ask about this. Confirm it before answering.');
+        if (saved === 'unknown') expect(byId.assets.basis).toBe("Your saved answer: I don't know. Confirm this before answering.");
+        // The copied text is the answers only; coaching stays on screen.
+        expect(report.text).not.toContain('To answer Yes'); expect(report.text).not.toContain('Check the exact coverage');
         expect(byId['restore-tests'].question).toContain('three months');
         expect(byId['backup-storage'].question).toContain('out of reach of ransomware');
     });
@@ -185,7 +192,9 @@ describe('v2 results in the questionnaire', () => {
         expect(rows().mfa).toBe('Not answered');
         a.responses[0].optionId = 'yes';
         a.profileRef = { ...md.profileRef, sourceCatalogueSha256: 'a'.repeat(64) };
-        expect(Object.values(rows()).every(answer => answer === 'Not answered')).toBe(true);
+        const { endpoint, ...others } = rows();
+        expect(endpoint).toBe('Not covered by this check');
+        expect(Object.values(others).every(answer => answer === 'Not answered')).toBe(true);
     });
 
     test('provider and board summaries group v2 answers by credit, with each answer\'s own label', async () => {
@@ -205,6 +214,78 @@ describe('v2 results in the questionnaire', () => {
         expect(section('Not in place yet')).toContain('Limit supplier access');
         expect(section('Not yet confirmed')).toContain('Protect your business email');
         expect(section('Marked not applicable (to be confirmed)')).toContain('Protect and separate your network');
+    });
+
+    test('a later board summary says it supersedes the earlier one and lists the changed answers (#733)', async () => {
+        const answers = EXAMPLE.slice(); answers[0] = 'yes';
+        const { assessment } = await submittedV2(answers);
+        const earlier = JSON.parse(JSON.stringify(assessment));
+        earlier.assessmentId = 'assessment-earlier'; earlier.submission.submittedAt = '2026-11-19T04:17:00.000Z';
+        const metadata = V2();
+        earlier.responses = earlier.responses.map(row => row.itemId === metadata.questions[0].id ? { ...row, optionId: 'no' } : row);
+        const title = metadata.controls.find(control => control.id === metadata.questions[0].controlId).title;
+        const label = id => metadata.responseOptions.find(option => option.id === id).label;
+        const only = questionnaire.boardSummary(assessment, metadata).text;
+        expect(only).not.toMatch(/supersedes|Changes since/);
+        const board = questionnaire.boardSummary(assessment, metadata, [], earlier).text;
+        const lines = board.split('\n');
+        expect(lines[lines.findIndex(line => line.startsWith('Assessed: ')) + 1]).toMatch(/^This summary updates and supersedes the summary assessed .+\.$/);
+        const changes = board.split('\n\n').find(part => part.startsWith('Changes since the previous assessment:'));
+        expect(changes.split('\n').slice(1)).toEqual([`- ${title}${metadata.questions.filter(q => q.controlId === metadata.questions[0].controlId).length > 1 ? ' (question 1)' : ''}: ${label('no')} → ${label('yes')}`]);
+        // Same answers: the summary still supersedes, and says nothing changed.
+        const same = questionnaire.boardSummary(assessment, metadata, [], { ...earlier, responses: assessment.responses }).text;
+        expect(same).toContain('Changes since the previous assessment:\n- No answers changed.');
+        // Not an earlier submission on the same questions: no claim at all.
+        for (const other of [{ ...earlier, submission: { ...earlier.submission, submittedAt: '2027-01-01T00:00:00.000Z' } },
+            { ...earlier, assessmentId: assessment.assessmentId }, { ...earlier, profileRef: { ...earlier.profileRef, profileVersion: 'other' } }, null]) {
+            expect(questionnaire.boardSummary(assessment, metadata, [], other).text).toBe(only);
+        }
+    });
+
+    test('Results reads the previous submission once and its board summary supersedes it (#733)', async () => {
+        const h = await backend(), earlierAnswers = EXAMPLE.slice(), laterAnswers = EXAMPLE.slice(); laterAnswers[0] = 'yes';
+        await h.execute(createCommand('assessment-a', 'create-a')); await h.execute(saveCommand('assessment-a', 0, 'save-a', v2Answers(earlierAnswers)));
+        await h.execute(submitCommand('assessment-a', 1, 'submit-a'));
+        h.clock.advance(3600000);
+        await h.execute(createCommand('assessment-b', 'create-b')); await h.execute(saveCommand('assessment-b', 0, 'save-b', v2Answers(laterAnswers)));
+        await h.execute(submitCommand('assessment-b', 1, 'submit-b'));
+        const ui = mountUi(h);
+        try {
+            await until(() => listButton(ui)); listButton(ui).click();
+            const walk = node => [node, ...node.children.flatMap(walk)];
+            const board = () => walk(ui.root).find(node => node.id === 'ncsc-board-summary');
+            await until(() => board() && board().value.includes('supersedes'));
+            expect(board().value).toMatch(/\nChanges since the previous assessment:\n- [^\n]+: No → Yes, in place and checked\n/);
+            const reads = h.fetch.mock.calls.map(([url]) => decodeURIComponent(new URL(url, 'https://synthetic.invalid').pathname)).filter(path => path.endsWith('/assessment-a'));
+            expect(reads).toHaveLength(1);
+        } finally { ui.controller.destroy(); }
+    });
+
+    test('Results opened directly reads the history once and still supersedes; a refused read denies (#733)', async () => {
+        for (const refuse of [false, true]) {
+            const h = await backend(), laterAnswers = EXAMPLE.slice(); laterAnswers[0] = 'yes';
+            await h.execute(createCommand('assessment-a', 'create-a')); await h.execute(saveCommand('assessment-a', 0, 'save-a', v2Answers(EXAMPLE)));
+            await h.execute(submitCommand('assessment-a', 1, 'submit-a'));
+            h.clock.advance(3600000);
+            await h.execute(createCommand('assessment-b', 'create-b')); await h.execute(saveCommand('assessment-b', 0, 'save-b', v2Answers(laterAnswers)));
+            await h.execute(submitCommand('assessment-b', 1, 'submit-b'));
+            const client = refuse ? { ...h.client, read: async (id, settings) => {
+                if (id === 'assessment-a') { const error = new Error('denied'); error.statusCode = 403; error.code = 'ncsc_access_denied'; throw error; }
+                return h.client.read(id, settings);
+            } } : h.client;
+            const ui = mountUi(h, { client, initialAssessmentId: 'assessment-b' });
+            try {
+                const walk = node => [node, ...node.children.flatMap(walk)];
+                const board = () => walk(ui.root).find(node => node.id === 'ncsc-board-summary');
+                if (!refuse) {
+                    await until(() => board() && board().value.includes('supersedes'));
+                    expect(board().value).toContain('Changes since the previous assessment:');
+                } else {
+                    await until(() => ui.root.textContent.includes('This assessment is not available.'));
+                    expect(board()).toBeUndefined();
+                }
+            } finally { ui.controller.destroy(); }
+        }
     });
 
     test.each([[14, ACCEPTED_NCSC_CONTEXT], [16, NCSC_V2_CONTEXT]])(
@@ -328,8 +409,50 @@ test('board commitments distinguish two questions on one control and a ranked un
     for (const callback of board.events.toggle) callback();
     await until(() => board.querySelector('.picture-board-actions').querySelectorAll('li').length === 3);
     const paper = board.querySelector('.picture-board-print').textContent;
-    backup.forEach((q, i) => expect(paper).toContain(q.prompt + ' — Synthetic owner ' + (i + 1)));
+    // #696: each question on a two-question control has its own title, so the commitment uses it.
+    ['Data Recovery: backups', 'Data Recovery: restore tests'].forEach((title, i) => expect(paper).toContain(title + ' — Synthetic owner ' + (i + 1)));
+    expect(paper).toContain('Multi-factor Authentication: coverage — Synthetic owner 0');
     expect(paper).toContain('Synthetic owner 0');
     expect(readBoardPlan.mock.calls[0][0].outputSha256).toBe(assessment.submission.evaluation.outputSha256);
     controller.destroy();
+});
+
+test('two questions on one control never share a title in the board summary or the top gaps (#696)', async () => {
+    const metadata = V2(), ids = metadata.questions.map(question => question.id);
+    const at = suffix => ids.findIndex(id => id.endsWith(suffix));
+    const answers = metadata.questions.map(question => question.responseOptionIds[0]);
+    // Backups partly in place, restore tests not; MFA required everywhere but by text code.
+    answers[at('DR-01-Q1')] = 'partly'; answers[at('DR-01-Q2')] = 'no'; answers[at('MF-01-Q2')] = 'mfa_text_code';
+    const { h, assessment } = await submittedV2(answers);
+    const result = questionnaire.resultModel(assessment, metadata, h.organisationId);
+    const gaps = questionnaire.topGaps(result, metadata, 5), titles = gaps.map(gap => gap.title);
+    expect(new Set(titles).size).toBe(titles.length);
+    expect(titles).toEqual(expect.arrayContaining(['Data Recovery: backups', 'Data Recovery: restore tests', 'Multi-factor Authentication: method']));
+    const board = questionnaire.boardSummary(assessment, metadata, gaps).text;
+    const grouped = board.slice(board.indexOf('\nIn place:')).split('\n').filter(line => line.startsWith('- '));
+    expect(new Set(grouped).size).toBe(grouped.length);
+    expect(board).toMatch(/In place:[\s\S]*- Multi-factor Authentication: coverage\n/);
+    expect(board).toMatch(/Partly in place:[\s\S]*- Data Recovery: backups\n/);
+    expect(board).toMatch(/Not in place yet:[\s\S]*- Data Recovery: restore tests/);
+    expect(board).not.toMatch(/- (?:Data Recovery|Multi-factor Authentication)\n/);
+    // A control with one question keeps its plain title.
+    expect(board).toMatch(/- Patching\n/);
+});
+
+// #714: results explain a gap by the harm it prevents, never by how to answer the question.
+test('every v2 "Why it matters" line names a harm in 25 words or fewer and holds no answering instruction', () => {
+    const { createNcscQuestionnaireMetadataV2, createNcscQuestionnaireMetadata } = require('../api/shared/ncscQuestionnaireMetadata');
+    const client = require('../api/shared/protectedAssets/ncscQuestionnaire');
+    const metadata = createNcscQuestionnaireMetadataV2();
+    expect(metadata.questions).toHaveLength(16);
+    const lines = metadata.questions.map(question => client.gapWhy(metadata, question));
+    expect(new Set(lines).size).toBe(16);
+    for (const line of lines) {
+        expect(line).not.toMatch(/answer (Partly|Sometimes|Yes|No)|Choose the weakest|choose Not applicable/i);
+        expect(line.split(/\s+/).length).toBeLessThanOrEqual(25);
+        expect(line).toMatch(/\.$/);
+    }
+    // The earlier profile keeps its own text.
+    const accepted = createNcscQuestionnaireMetadata();
+    expect(client.gapWhy(accepted, accepted.questions[0])).toBe(accepted.questions[0].guidance.summary);
 });

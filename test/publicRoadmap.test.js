@@ -34,7 +34,9 @@ test('every item has source PRs; only Done has release proof and a period', () =
                 'https://github.com/Discla1mer/nofries-platform/issues/500#issuecomment-7074327704',
                 // Activation of the paid-frameworks and deferred-details flags on 62a9702.
                 'https://github.com/Discla1mer/nofries-platform/issues/151#issuecomment-7084596099',
-                'https://github.com/Discla1mer/nofries-platform/issues/151#issuecomment-7122999986'
+                'https://github.com/Discla1mer/nofries-platform/issues/151#issuecomment-7122999986',
+                // Scoring v2 switched on in production with release 8377e3c.
+                'https://github.com/Discla1mer/nofries-platform/issues/151#issuecomment-7204359198'
             ]).toContain(item.release);
             for (const pr of item.prs) expect(source).toMatch(new RegExp(`\\| \\[#${pr}\\]\\([^\\n]+\\| \\x60[a-f0-9]{40}\\x60 \\|`));
         } else {
@@ -114,7 +116,7 @@ test('942ea19 examples and the activated items are Done in Oct–Dec 2026', () =
         expect(data.items.find(item => item.id === id)).toMatchObject({ period: 'Oct–Dec 2026', lane: 'Done',
             release: 'https://github.com/Discla1mer/nofries-platform/issues/151#issuecomment-7084596099' });
     }
-    expect(data.lastUpdated).toBe('2026-11-26');
+    expect(data.lastUpdated).toBe('2026-11-28');
     expect(data.items.filter(item => item.lane === 'Done' && item.period !== 'Oct–Dec 2026')).toEqual([]);
 });
 
@@ -136,4 +138,38 @@ test('every item belongs to one line of work with a short map label', () => {
     }
     expect(html).toContain('<script src="/js/roadmap.js" defer></script>');
     expect(html).not.toMatch(/ style="/);
+});
+
+test('NCSC figures: latest quarter charted, survey population stated exactly, framework not credited with a question count (#672)', () => {
+    const text = name => read(name).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
+    const roadmap = read('roadmap.html');
+    const chart = roadmap.match(/aria-label="Reported direct financial loss: ([^"]+)"/)[1].split(', ');
+    // A rolling two years of NCSC quarterly reports, newest last. Add each new quarter here and in the chart.
+    expect(chart).toEqual(['Q4 24 NZ$6.8 million', 'Q1 25 NZ$7.8 million', 'Q2 25 NZ$5.7 million', 'Q3 25 NZ$12.4 million',
+        'Q4 25 NZ$3.2 million', 'Q1 26 NZ$5.6 million', 'Q2 26 NZ$2.7 million', 'Q3 26 NZ$5.9 million']);
+    expect(roadmap.match(/class="roadmap-bar-hi"[^>]*\/><text[^>]*>([^<]+)</)[1]).toBe('$5.9m');
+    expect(roadmap).toContain('href="https://www.ncsc.govt.nz/insights-and-research/insights-reports/"');
+    expect(text('roadmap.html')).toContain('quarterly reports for Oct–Dec 2024 to Jul–Sep 2026');
+    for (const name of ['roadmap.html', 'board.html', 'invoice-scams.html']) {
+        const page = text(name);
+        expect([name, /373 businesses/.test(page)]).toEqual([name, false]);
+        expect([name, /373 (?:SME )?IT or operational decision makers/.test(page)]).toEqual([name, true]);
+        // The Tracker's unit is full-time equivalents (p. 4), not a headcount of full-time staff.
+        expect([name, /0–49 full-time equivalents \(FTEs\)/.test(page)]).toEqual([name, true]);
+        expect([name, /full-time staff|\d+ (?:to|–) ?\d+ staff\b/.test(page)]).toEqual([name, false]);
+        expect([name, /small businesses (?:say|that say)|small businesses, 2026/.test(page)]).toEqual([name, false]);
+    }
+    expect(text('roadmap.html')).toContain('76% of firms with 20–49 FTEs');
+    for (const name of ['roadmap.html', 'index.html', 'pricing.html', 'sample-result.html'])
+        expect([name, /Framework\s*:\s*five functions, \d+ questions/.test(text(name))]).toEqual([name, false]);
+});
+
+test('no planned item describes a question count that Done or the homepage already claims (#683)', () => {
+    const count = /\b(\d+)[- ]question/g, counts = text => new Set([...text.matchAll(count)].map(match => match[1]));
+    const live = counts(data.items.filter(item => item.lane === 'Done').map(item => item.text).join(' '));
+    for (const number of counts(read('index.html').replace(/<[^>]+>/g, ' ').replace(/(\d+) questions/g, '$1-question'))) live.add(number);
+    expect(live.has('16')).toBe(true);
+    for (const item of data.items.filter(item => item.lane !== 'Done'))
+        for (const number of counts(item.text)) expect([item.id, live.has(number)]).toEqual([item.id, false]);
+    expect(data.items.find(item => item.id === 'weighted-assessment').lane).toBe('Done');
 });

@@ -36,6 +36,8 @@ function setup(settings = {}) {
     const dom = createDom();
     const options = { metadata: fixtures.metadata, client, organisationId: seed.model.context.organisationId,
         displayName: 'Synthetic organisation A', ...settings.options };
+    // The loader records the signed-in account type on <body> (#724).
+    if (settings.accountType) dom.root.ownerDocument.body = { dataset: { dashboardAccountType: settings.accountType } };
     const controller = picture.mount(dom.root, options);
     return { ...dom, fixtures, seed, controller, options };
 }
@@ -403,6 +405,23 @@ test('an old saved-record action cannot open after a refresh or destruction', as
     dom.controller.destroy(); old.click();
     release({ assessments: [record], nextAfterAssessmentId: null }); await flush();
     assert.deepEqual(opened, []); assert.equal(dom.root.textContent, '');
+});
+
+test('#724: a consultant sees organisation wording, not owner wording, on first use and above the gaps', async () => {
+    let opened = 0; const empty = setup({ records: [], accountType: 'consultant', options: { openCyber: () => opened++ } }); await flush();
+    assert.match(empty.root.textContent, /Start this organisation's cyber check/);
+    assert.match(empty.root.textContent, /Answer questions about this organisation to see where it stands and what to fix first\./);
+    assert.doesNotMatch(empty.root.textContent, /your business|where you stand|Start your cyber check/);
+    click(empty, "Start this organisation's cyber check"); assert.equal(opened, 1);
+    empty.controller.destroy();
+    const withGaps = setup({ accountType: 'consultant' }); await flush();
+    assert.match(withGaps.root.querySelector('.picture-gap-help').textContent, /^You can plan these with this organisation in the Improvement Plan\.$/);
+    assert.doesNotMatch(withGaps.root.querySelector('.picture-top-gaps').textContent, /No Fries can help you fix any of these/);
+    withGaps.controller.destroy();
+    // A company account keeps the owner wording.
+    const company = setup({ accountType: 'company' }); await flush();
+    assert.equal(company.root.querySelector('.picture-gap-help').textContent, 'No Fries can help you fix any of these.');
+    company.controller.destroy();
 });
 
 test('empty organisation has an actionable baseline state and no invented zero score', async () => {
@@ -1138,6 +1157,18 @@ test('a single submitted assessment explains that there is nothing to compare ye
     const section = trendSection(dom);
     assert.equal(section.querySelector('h3').textContent, 'Change over time');
     assert.match(section.textContent, /This is the only submitted assessment so far\. Another submitted assessment is needed/);
+    // #719: the single-result state says what a second assessment is for.
+    assert.match(section.textContent, /A second assessment shows whether the gaps you worked on have closed\. Repeat the check in six to twelve months, or after a big change such as switching IT providers\./);
+    // The interval is advice, not a claim about what other businesses do.
+    assert.doesNotMatch(section.textContent, /Most small businesses/);
+    assert.equal(section.querySelectorAll('button').length, 0);
+    const opened = [];
+    const linked = setup({ client: trendClient([only, draft]).client, options: { initialAssessmentId: only.assessmentId, openCyber: (...args) => opened.push(args) } }); await flush();
+    // The host opens the saved-assessment list here, so the button says so.
+    const again = trendSection(linked).querySelectorAll('button').find(item => item.textContent === 'Go to your assessments');
+    again.click(); assert.deepEqual(opened, [[undefined]]);
+    assert.match(trendSection(linked).textContent, /You can start another from your assessments\./);
+    linked.controller.destroy();
     assert.equal(section.querySelectorAll('button').length, 0);
     assert.equal(section.querySelector('table'), null);
     assert.deepEqual(reads, [only.assessmentId]);
@@ -1160,9 +1191,16 @@ test('comparing submitted assessments shows saved ranges and coverage without di
     assert.deepEqual(reads, [later.assessmentId, earlier.assessmentId]);
     section = trendSection(dom);
     assert.match(section.textContent, /Compared with the previous assessment, submitted 10 Sept 2026/);
-    assert.match(section.querySelector('.ncsc-warning').textContent, /matching saved scope descriptions do not establish the same real-world population/);
+    // #731: one message, naming the shared question set once and why no change is calculated.
+    assert.equal(section.querySelector('.ncsc-warning').textContent, 'Same accepted questions and weights in both and the same saved scope description. ' +
+        'That still does not show the same real-world setup, so this is not a measure of improvement or decline. Saved results are shown side by side; no change is calculated.');
+    assert.doesNotMatch(section.textContent, /Not comparable|use the same set of questions|accepted profile and included question weights/);
     const rows = trendRows(dom);
     assert.deepEqual(rows[0], ['Overall', '0.0%', '100.0%']);
+    // The answers behind the 0% to 100% jump are listed, earlier → selected.
+    const changes = section.querySelector('.picture-trend-changes').querySelectorAll('li');
+    assert.equal(changes.length, dom.fixtures.metadata.questions.length);
+    assert.ok(changes.every(item => / → Yes$/.test(item.textContent) && !/Yes → Yes/.test(item.textContent)));
     assert.equal(rows.length, 1 + dom.fixtures.metadata.domains.length);
     assert.deepEqual(rows.slice(1).map(row => row[0]), dom.fixtures.metadata.domains.map(domain => domain.title));
     assert.ok(rows.slice(1).every(row => row[2] === '100.0%' && row.length === 3));
@@ -1213,6 +1251,58 @@ test('completing a comparison moves focus from the removed Compare button to the
     dom.controller.destroy();
 });
 
+test('the board summary supersedes the previous submission and lists the changed answers (#733)', async () => {
+    const earlier = submittedAt('assessment-earlier', '2026-09-10T00:00:00.000Z', allResponses('no'));
+    const later = submittedAt('assessment-later', '2026-10-10T00:00:00.000Z', mixedResponses());
+    const { client, reads, writes } = trendClient([earlier, later]);
+    const dom = setup({ client, options: { initialAssessmentId: later.assessmentId } }); await flush(); await flush();
+    const walk = node => [node, ...node.children.flatMap(walk)];
+    const board = walk(dom.root).find(node => node.tagName === 'TEXTAREA' && /-board-summary$/.test(node.id));
+    assert.ok(board);
+    assert.match(board.value, /\nThis summary updates and supersedes the summary assessed .+\.\n/);
+    const changes = board.value.split('\n\n').find(part => part.startsWith('Changes since the previous assessment:')).split('\n').slice(1);
+    const moved = mixedResponses().filter(row => row.optionId !== 'no').length;
+    assert.equal(changes.length, moved); assert.ok(moved > 0);
+    assert.ok(changes.every(line => /^- .+: No → /.test(line) && !/: No → No$/.test(line)));
+    const printed = walk(dom.root).find(node => node.tagName === 'PRE' && node.className.includes('picture-board-print'));
+    assert.equal(printed.textContent, board.value);
+    // One extra read of the earlier submission, and no writes.
+    assert.deepEqual(reads, [later.assessmentId, earlier.assessmentId]); assert.equal(writes(), 0);
+    dom.controller.destroy();
+});
+
+test('a refused read of the previous submission clears the picture, as Compare does (#733)', async () => {
+    const earlier = submittedAt('assessment-earlier', '2026-09-10T00:00:00.000Z', allResponses('no'));
+    const later = submittedAt('assessment-later', '2026-10-10T00:00:00.000Z', mixedResponses());
+    const { client } = trendClient([earlier, later], { fail: id => id === earlier.assessmentId ? { statusCode: 403 } : null });
+    const dom = setup({ client, options: { initialAssessmentId: later.assessmentId } }); await flush(); await flush();
+    assert.match(dom.root.textContent, /unavailable/);
+    assert.doesNotMatch(dom.root.textContent, /46\.4%|Summary for your board or insurer/);
+    dom.controller.destroy();
+});
+
+test('a failed (not refused) read of the previous submission leaves the summary without the supersedes lines (#733)', async () => {
+    const earlier = submittedAt('assessment-earlier', '2026-09-10T00:00:00.000Z', allResponses('no'));
+    const later = submittedAt('assessment-later', '2026-10-10T00:00:00.000Z', mixedResponses());
+    const { client } = trendClient([earlier, later], { fail: id => id === earlier.assessmentId ? { statusCode: 503 } : null });
+    const dom = setup({ client, options: { initialAssessmentId: later.assessmentId } }); await flush(); await flush();
+    const walk = node => [node, ...node.children.flatMap(walk)];
+    const board = walk(dom.root).find(node => node.tagName === 'TEXTAREA' && /-board-summary$/.test(node.id));
+    assert.ok(board); assert.doesNotMatch(board.value, /supersedes|Changes since/);
+    dom.controller.destroy();
+});
+
+test('a single submission makes no supersedes claim and reads nothing else (#733)', async () => {
+    const only = submittedAt('assessment-only', '2026-10-10T00:00:00.000Z', mixedResponses());
+    const { client, reads } = trendClient([only]);
+    const dom = setup({ client, options: { initialAssessmentId: only.assessmentId } }); await flush(); await flush();
+    const walk = node => [node, ...node.children.flatMap(walk)];
+    const board = walk(dom.root).find(node => node.tagName === 'TEXTAREA' && /-board-summary$/.test(node.id));
+    assert.doesNotMatch(board.value, /supersedes|Changes since/);
+    assert.deepEqual(reads, [only.assessmentId]);
+    dom.controller.destroy();
+});
+
 test('different scopes suppress change, and the earliest record has no previous result', async () => {
     const earlier = submittedAt('assessment-earlier', '2026-09-10T00:00:00.000Z', allResponses('yes'), 'Head office only.');
     const later = submittedAt('assessment-later', '2026-10-10T00:00:00.000Z', mixedResponses());
@@ -1220,12 +1310,13 @@ test('different scopes suppress change, and the earliest record has no previous 
     const dom = setup({ client, options: { initialAssessmentId: later.assessmentId } }); await flush();
     click(dom, 'Compare with previous assessment'); await flush();
     assert.deepEqual(trendRows(dom)[0], ['Overall', '100.0%', '46.4%–60.7%']);
-    assert.match(trendSection(dom).querySelector('.ncsc-warning').textContent, /saved scope declarations differ/);
+    assert.match(trendSection(dom).querySelector('.ncsc-warning').textContent, /your business details \(scope\) differ, so this is not a measure of improvement or decline/);
     change(dom.root.querySelector('.picture-toolbar').querySelector('select'), earlier.assessmentId); await flush();
-    assert.equal(reads.length, 3);
+    // Includes the later view's one read of the earlier result for its board summary (#733).
+    assert.equal(reads.length, 4);
     assert.equal(trendSection(dom).querySelectorAll('button').map(button => button.textContent).join(), 'Compare with later assessments');
     click(dom, 'Compare with later assessments'); await flush();
-    assert.equal(reads.length, 4);
+    assert.equal(reads.length, 5);
     assert.match(trendSection(dom).textContent, /earliest submitted assessment shown, so there is nothing earlier to compare/);
     assert.equal(trendSection(dom).querySelector('table'), null);
     assert.equal(trendSection(dom).querySelectorAll('li').length, 2);
@@ -1538,9 +1629,11 @@ describe('next step under the top gaps', () => {
         assert.equal(link.textContent, 'Fix these with No Fries');
         assert.equal(link.href, '/contact.html?service=managed_security_90');
         assert.match(help.textContent, /90-day managed security/);
-        assert.doesNotMatch(help.textContent, /\$\s*\d|opens the contact form/i);
+        // #657: the dashboard may show the price (owner decision, 28 Nov 2026).
+        assert.match(help.textContent, /NZ\$1,250 \+ GST/);
+        assert.doesNotMatch(help.textContent, /opens the contact form/i);
         const pricing = Array.from(help.querySelectorAll('a')).find(item => item.href === '/pricing#pricing-pilot');
-        assert.ok(pricing, 'Results link to the central offer instead of repeating its price');
+        assert.ok(pricing, 'the offer still links to the full pricing and inclusions');
         assert.doesNotMatch(panel.textContent, /Synthetic organisation A|46\.4%|assessment-mixed/);
         controller.destroy();
     });
@@ -1641,7 +1734,16 @@ describe('next step under the top gaps', () => {
         press('Copy summary'); await flush();
         assert.equal(status.textContent, 'Summary selected. Press Ctrl+C or Cmd+C to copy it.');
         assert.equal(dom.document.activeElement, input);
+        // #662: paper gets the summary alone; the rest of the page is hidden for print only, then restored.
+        const summaryPrinted = handoff.querySelectorAll('.picture-summary-print').find(item => !item.classList.contains('picture-board-print'));
+        assert.equal(summaryPrinted.textContent, input.value);
+        print.mockImplementationOnce(() => {
+            assert.ok(summaryPrinted.classList.contains('picture-print-only'));
+            assert.ok(input.classList.contains('picture-print-hide'));
+        });
         press('Print these results'); assert.equal(print.mock.calls.length, 1);
+        assert.equal(summaryPrinted.classList.contains('picture-print-only'), false);
+        assert.equal(dom.root.querySelectorAll('.picture-print-hide').length, 0);
         // Print board summary hides everything else for print only, then restores the page.
         const boardPrinted = handoff.querySelector('.picture-board-print');
         print.mockImplementationOnce(() => {
@@ -1737,8 +1839,10 @@ test('Actions card stays hidden until there is a submitted result', async () => 
 test('Actions card empty state links to the top three gaps panel', async () => {
     const dom = actionsCard({ value: { more: false, lists: [] } }); await flush();
     const card = dom.root.querySelector('.picture-actions');
+    // #719: with gaps listed on the card, the empty line is about saved plan actions.
     assert.equal(card.querySelector('.picture-actions-empty').textContent.replace(/\s+/g, ' ').trim(),
-        'No actions yet. Start with your top three gaps.');
+        'No improvement-plan actions saved yet. Open the Improvement Plan to give a gap an owner and a date. Go to your top three gaps.');
+    assert.doesNotMatch(card.textContent, /No actions yet/);
     assert.equal(card.querySelector('h4').textContent, 'Start with these gaps');
     const link = card.querySelector('a'), heading = dom.root.querySelector('.picture-top-gaps').querySelector('h3');
     assert.equal(link.href, '#' + heading.id);
@@ -1797,8 +1901,10 @@ describe('honest saved-assessment comparisons', () => {
         assert.ok(section.textContent.includes(shared + ' questions have one of these answers in both.'));
         assert.match(section.textContent, /Unknown and Not applicable answers stay unresolved/);
         assert.doesNotMatch(section.textContent, /unapproved N\/A|approval workflow/);
-        assert.match(section.textContent, /Not comparable as improvement or decline/);
+        assert.match(section.textContent, /same saved scope description\. That still does not show the same real-world setup, so this is not a measure of improvement or decline/);
+        assert.doesNotMatch(section.textContent, /use the same set of questions/);
         assert.equal(section.textContent.includes('The set of questions answered Yes, Partial or No also differs.'), differs);
+        if (_label === 'unchanged unresolved coverage') assert.equal(section.querySelector('.picture-trend-changes-none').textContent, 'No answers changed.');
         assert.doesNotMatch(section.textContent, /Up \d|Down \d|No change|Lower-bound change/);
         assert.deepEqual(section.querySelector('thead').querySelectorAll('th').map(cell => cell.textContent), ['Area', 'Previous', 'Selected']);
         assert.equal(dom.root.querySelector('.picture-metrics').textContent, metrics);

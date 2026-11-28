@@ -295,7 +295,8 @@ test('the Services tab leads with the 90-day managed security offer as a plain c
     const dom = mount(view(), { initialRoute: 'services' });
     const offer = dom.root.querySelector('.dashboard-offer-panel');
     assert.ok(offer);
-    assert.match(offer.textContent, /Get help working through the gaps in your assessment/);
+    assert.match(offer.textContent, /90-day managed security · NZ\$1,250 \+ GST/);
+    assert.match(offer.textContent, /No Fries works through the gaps in your assessment with you/);
     const link = Array.from(offer.querySelectorAll('a')).find(item => item.textContent === 'Ask about 90-day managed security');
     assert.equal(link.href, '/contact.html?service=managed_security_90');
     const pricing = Array.from(offer.querySelectorAll('a')).find(item => item.href === '/pricing#pricing-pilot');
@@ -308,7 +309,10 @@ test('the Services tab leads with the 90-day managed security offer as a plain c
     assert.equal(offer.querySelectorAll('form').length, 0);
 });
 
-test('Services withholds both paths to the offer until representative details are ready', async () => {
+// #657 (owner decision, 28 Nov 2026): the offer links open public pages only,
+// so they show before name, role and address are saved. Actions that share
+// details stay behind the details gate.
+test('Services shows both paths to the offer before representative details are saved', async () => {
     for (const status of ['details_required', 'result_required', 'ready']) {
         const dom = mount(view(), {
             initialRoute: 'services',
@@ -316,15 +320,9 @@ test('Services withholds both paths to the offer until representative details ar
         });
         await new Promise(resolve => setImmediate(resolve));
         const offer = dom.root.querySelector('.dashboard-offer-panel');
-        const gate = offer.querySelector('.dashboard-details-gate');
-        const links = Array.from(offer.querySelectorAll('a'));
-        if (status === 'ready') {
-            assert.deepEqual(links.map(link => link.href), ['/contact.html?service=managed_security_90', '/pricing#pricing-pilot']);
-            links.forEach(link => assert.equal(link.parentElement.parentElement, gate));
-            assert.equal(gate.parentElement, offer);
-        } else {
-            assert.equal(links.length, 0);
-        }
+        assert.equal(offer.querySelector('.dashboard-details-gate'), null);
+        assert.deepEqual(Array.from(offer.querySelectorAll('a')).map(link => link.href),
+            ['/contact.html?service=managed_security_90', '/pricing#pricing-pilot']);
         dom.controller.destroy();
     }
 });
@@ -835,6 +833,13 @@ for (const managed of [false, true]) test(`repeating the current Services route 
     assert.equal(dom.root.querySelector('h1').textContent, 'Cyber Security');
 });
 
+test('#685: /dashboard#evidence without the Evidence module says so instead of "couldn\'t find that page"', () => {
+    const dom = mount(view({ role: 'viewer' }), { initialRoute: '#evidence' });
+    assert.equal(dom.root.querySelector('h1').textContent, 'Overview');
+    assert.match(dom.root.textContent, /Evidence storage isn't available on this account yet, so we've taken you to Overview\./);
+    assert.doesNotMatch(dom.root.textContent, /We couldn't find that page/);
+});
+
 test('selecting the current fallback module still replaces an invalid fragment with its canonical route', async () => {
     const dom = historyDom();
     dom.window.location.hash = '#unknown'; await tick();
@@ -1030,4 +1035,11 @@ test('the dashboard footer disclosure and organisations pill follow the page gri
     assert.match(wide, /:is\(\.dashboard-release-footer, \.site-details\) \{ width: auto; margin-inline: 1rem; \}/);
     const html = fs.readFileSync(path.join(__dirname, '../app/dashboard.html'), 'utf8');
     assert.match(html, /<details class="site-details">\s*<summary>About this site<\/summary>/);
+});
+
+test('keyboard focus scrolls clear of the sticky organisation bar on wider screens (#715)', () => {
+    const css = fs.readFileSync(path.join(__dirname, '../app/dashboard.css'), 'utf8');
+    assert.match(css, /@media screen and \(min-width: 48\.0625rem\) \{\s*html:has\(\.nofries-dashboard \.dashboard-topbar\) \{ scroll-padding-top: calc\(4\.5rem \+ 8px\); \}/);
+    // The bar stops being sticky at 48rem and below, exactly where the padding stops.
+    assert.match(css, /@media screen and \(max-width: 48rem\) \{[\s\S]*?\.nofries-dashboard \.dashboard-topbar \{ position: static;/);
 });

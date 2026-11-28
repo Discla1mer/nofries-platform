@@ -94,3 +94,15 @@ test('NCSC is spelled out at first use and the example figure is explained from 
     expect(text(html)).toContain(`Each Yes counts in full, each Partial counts as half and each No counts as zero, so ${counts.yes} Yes and ${counts.partial} Partial out of ${result.total} questions gives ${result.attainment}.`);
     expect(text(html)).toContain('Guide and Govern is about leadership, priorities and everyday guidance');
 });
+
+test('on phones a figure never breaks across lines, and the header reads as one column (#716)', () => {
+    const css = require('node:fs').readFileSync(require('node:path').join(__dirname, '../home.css'), 'utf8');
+    const phone = css.match(/@media \(max-width: 40rem\) \{\s*\.sample-result-table thead[\s\S]*?\n\}/)[0];
+    expect(phone).toMatch(/\.sample-result-table \{ overflow-wrap: normal; \}/);
+    expect(phone).toMatch(/\.sample-result-table td \{ display: grid; grid-template-columns: minmax\(0, 1fr\) auto;[^}]*white-space: nowrap;/);
+    expect(phone).toMatch(/\.sample-result-table td::before \{[^}]*white-space: normal; \}/);
+    expect(phone).toMatch(/\.sample-result-table td > \.sample-bar \{ grid-column: 1 \/ -1; \}/);
+    // The roadmap's two-column intro must not split this page's eyebrow, name and lead.
+    expect(css).toMatch(/\.sample-result \.public-roadmap-intro \{ display: block; max-width: 780px; \}/);
+    expect(css.indexOf('.sample-result .public-roadmap-intro { display: block')).toBeGreaterThan(css.indexOf('.public-roadmap-intro { display: grid;'));
+});

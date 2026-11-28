@@ -29,6 +29,7 @@ No Fries operator roles in `tenantAccess.js`; no existing `admin`, `customer_adm
 | `services.read` | Services | Yes | Yes | Yes | Explicit grant |
 | `contact.request` | Overview | Yes | Yes | Yes | No |
 | `membership.manage`, `advisor.manage` | Overview | Yes | No | No | No |
+| `organisation.manage` | Overview | Yes | No | No | No |
 
 Canonical module IDs are `overview`, `cyber_security`, `ai_governance`,
 `it_optimisation`, `improvement_plan`, `evidence`, `board_reports` and `services`.
@@ -39,6 +40,12 @@ and mismatched pairs deny. Permissions never make an unfinished module available
 (`POST /api/dashboard/contact-requests`, behind `NOFRIES_CONTACT_REQUESTS_ENABLED`).
 An advisor acts for the organisation's work, not as the organisation, so no
 assignment can carry it.
+
+`organisation.manage` lets an admin save the organisation's own profile (website,
+industry, region and size) through `POST /api/dashboard/organisation-profile`,
+behind `NOFRIES_ORGANISATION_PROFILE_ENABLED` (#608). Any member with
+`overview.read` can read it with `GET`. Saves need the current revision; a stale
+one is refused with the current profile. No assignment can carry it.
 
 The dashboard shows "Ask No Fries to contact me" (results and each Services
 card) only when the session response carries `contactRequestsAvailable: true`.

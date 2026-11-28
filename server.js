@@ -138,7 +138,7 @@ function createNoFriesApp(configuration = {}) {
             const supplied = configuration.dashboard;
             const names = ['browserAuthOptions', 'identityPolicy', 'proofStore', 'clock', 'readExternalRuntimeEpoch',
                 'newRequestId', 'requestBudgetMs', 'pool', 'instanceId', 'historyBudget', 'newId', 'newGenerationToken', 'newOperationId'];
-            for (const optional of ['ncsc', 'paidFrameworksEnabled', 'improvementEnabled', 'contactRequestsEnabled', 'representativeDetailsEnabled', 'questionnaireExportGateEnabled', 'contactRequestEmail', 'customer', 'externalCustomer', 'activation']) if (supplied && !isProxy(supplied) && Object.prototype.hasOwnProperty.call(supplied, optional)) names.push(optional);
+            for (const optional of ['ncsc', 'paidFrameworksEnabled', 'improvementEnabled', 'contactRequestsEnabled', 'representativeDetailsEnabled', 'questionnaireExportGateEnabled', 'organisationProfileEnabled', 'contactRequestEmail', 'customer', 'externalCustomer', 'activation']) if (supplied && !isProxy(supplied) && Object.prototype.hasOwnProperty.call(supplied, optional)) names.push(optional);
             fields(supplied, names);
             const snapshot = Object.fromEntries(names.map(name => [name, supplied[name]]));
             const auth = snapshot.browserAuthOptions;
@@ -1075,6 +1075,13 @@ app.get([
 });
 
 app.get('/index.html', (_req, res) => res.redirect(308, '/'));
+// Short and guessed addresses for the invoice-scam page (#697). The campaign
+// query string is kept; the destination path is fixed, so nothing in the
+// request can steer the redirect elsewhere.
+app.get(['/scams', '/scam', '/scams.html', '/scam.html'], (req, res) => {
+    const query = req.originalUrl.indexOf('?');
+    res.redirect(301, '/invoice-scams' + (query < 0 ? '' : req.originalUrl.slice(query)));
+});
 app.get('/', (req, res) => {
     res.setHeader('Cache-Control', 'private, no-store, max-age=0');
     const selected = signupSelection(req, res); if (!selected) return;
@@ -1224,6 +1231,7 @@ function mountPublicAssets(application) {
     rootRoutes.push(['/', 'index.html']);
     rootRoutes.push(['/pricing', 'pricing.html']);
     rootRoutes.push(['/offer', 'offer.html']);
+    rootRoutes.push(['/invoice-scams', 'invoice-scams.html']);
     rootRoutes.forEach(([route, fileName]) => {
         application.get(route, (req, res) => {
             if (fileName.endsWith('.html')) {

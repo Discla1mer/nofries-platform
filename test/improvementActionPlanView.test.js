@@ -469,6 +469,16 @@ describe('plain action names, owners and plan summary', () => {
         expect(view.actionTitle(action, { [action.controlId]: 'No Fries Critical Control extension · ' })).toMatch(/^Control to review · /);
     });
 
+    test('scoring v2 split controls give their two plan actions different titles (#441)', () => {
+        const base = presentation().actions[0];
+        const titles = { 'NF-NCSC-MCSS-DR-01': 'Data Recovery', 'NF-NCSC-MCSS-MF-01': 'Multi-factor Authentication' };
+        const named = (controlId, itemId) => view.actionTitle({ ...base, controlId, itemId }, titles);
+        expect(named('NF-NCSC-MCSS-DR-01', 'NF-NCSC-MCSS-DR-01-Q1')).toMatch(/^Data Recovery · /);
+        expect(named('NF-NCSC-MCSS-DR-01', 'NF-NCSC-MCSS-DR-01-Q2')).toMatch(/^Data Recovery: restore tests · /);
+        expect(named('NF-NCSC-MCSS-MF-01', 'NF-NCSC-MCSS-MF-01-Q2')).toMatch(/^Multi-factor Authentication: login method · /);
+        expect(named('NF-NCSC-MCSS-DR-01', 'NF-NCSC-MCSS-DR-01-Q3')).toMatch(/^Data Recovery: question 3 · /);
+    });
+
     test('one short caveat is visible, with complete notices in a closed disclosure', () => {
         const model = presentation(), dom = render(model);
         const about = dom.root.querySelectorAll('details').find(detail => detail.querySelector('summary').textContent === 'About this plan');

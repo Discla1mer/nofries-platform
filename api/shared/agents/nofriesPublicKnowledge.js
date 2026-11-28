@@ -84,7 +84,7 @@ const NOFRIES_PUBLIC_KNOWLEDGE = deepFreeze({
         },
         priorityGuidance: {
             availability: 'available',
-            summary: 'After you submit, your saved results include Fix these first: your own No answers, then Partial, then Unknown and N/A, each with a starting action. It groups your answers; it is not a calculated risk ranking. Start with the gaps you reported, then ask your IT provider to check anything you marked Unknown.'
+            summary: 'After you submit, your saved results include Fix these first: your own No answers, then Partial, then Unknown and N/A, each with a starting action. It groups your answers; it is not a calculated risk ranking. Start with the gaps you reported, then check anything you marked Unknown. No Fries can check these with you.'
         },
         assistanceLimits: {
             availability: 'public_help_only',

@@ -12,11 +12,11 @@ const app = require('../server');
 const shell = require('../api/shared/protectedAssets/dashboardShell');
 const { createClient } = require('../api/shared/protectedAssets/ncscAssessmentClient');
 const questionnaire = require('../api/shared/protectedAssets/ncscQuestionnaire');
-const { createNcscQuestionnaireMetadata } = require('../api/shared/ncscQuestionnaireMetadata');
+const { createNcscQuestionnaireMetadataV2: createNcscQuestionnaireMetadata } = require('../api/shared/ncscQuestionnaireMetadata');
+const { NCSC_V2_CONTEXT } = require('../api/shared/assessmentEngine/ncscProfileSet');
 const { makeVersion, stableIntent } = require('../api/shared/assessmentLifecycle/postgresNcscAssessmentStore');
 const { projectNcscDetail } = require('../api/shared/ncscAssessmentService');
 const { ncscFixture, createCommand, saveCommand, submitCommand, NOW } = require('./fixtures/ncscAssessmentFixture');
-const golden = require('./fixtures/ncscAcceptedEvaluation.json');
 const demo = require('../demo/try/try-demo');
 const { buildTryDemoDocument, SOURCES, engineModules, engineBundle } = require('../demo/try/document');
 const { PUBLIC_ROOT_FILES, PUBLIC_SCRIPT_FILES } = require('../lib/publicAssets');
@@ -29,8 +29,12 @@ function recordingStorage(initial = {}) {
         setItem(key, value) { touched.add(key); values.set(key, String(value)); }, removeItem(key) { touched.add(key); values.delete(key); } };
 }
 function steppingClock(start = '2026-11-13T01:00:00.000Z') { let at = Date.parse(start); return () => new Date(at += 1000).toISOString(); }
-const mixedResponses = () => golden.input.atomInputs.map(atom => ({ itemId: atom.itemId, optionId: atom.response.optionId,
-    rationale: atom.response.optionId === 'not_applicable' ? { text: 'Fictional claim awaiting review.' } : null }));
+// A mixed set of 16-question (scoring v2) answers, including a not applicable claim.
+const MIXED = ['no', 'ad_hoc', 'partly', 'yes', 'partly', 'mfa_text_code', 'unknown', 'partly', 'yes', 'no', 'no',
+    'not_applicable', 'ad_hoc', 'partly', 'no', 'unknown'];
+const mixedResponses = () => NCSC_V2_CONTEXT.questionIds.map((itemId, index) => ({ itemId, optionId: MIXED[index],
+    rationale: MIXED[index] === 'not_applicable' ? { text: 'Fictional claim awaiting review.' } : null }))
+    .sort((a, b) => (a.itemId < b.itemId ? -1 : 1));
 async function submitThroughClient(client, assessmentId, responses) {
     await client.create(createCommand(assessmentId, 'create-' + assessmentId, 'Fictional workshop and office laptops.'));
     await client.save(saveCommand(assessmentId, 0, 'save-' + assessmentId, responses));
@@ -99,14 +103,14 @@ test('the page runs the real dashboard assets and scoring modules, with no fixtu
     const gateway = read('scripts/build-static.js').match(/protectedAppSource: \[([^\]]+)\]/)[1];
     for (const file of SOURCES.slice(0, 6)) assert.ok(gateway.includes("'" + path.basename(file) + "'"), file + ' is in the signed-in dashboard bundle');
     const modules = [...engineModules().keys()];
-    assert.ok(modules.includes('api/shared/assessmentEngine/assessmentEvaluator.js') && modules.includes('api/shared/ncscQuestionnaireMetadata.js'));
+    assert.ok(modules.includes('api/shared/assessmentEngine/assessmentEvaluatorV2.js') && modules.includes('api/shared/ncscQuestionnaireMetadata.js'));
     assert.ok(modules.every(file => /^api\/shared\/(assessmentEngine|securityGap)\/|^api\/shared\/ncscQuestionnaireMetadata\.js$/.test(file)), modules.join());
     const html = buildTryDemoDocument().html;
     for (const file of [...SOURCES, ...modules]) assert.ok(html.includes(read(file)), file + ' is embedded unchanged');
     const source = read('demo/try/try-demo.js');
     assert.doesNotMatch(source, /test\/fixtures|dashboard-preview|XMLHttpRequest|sendBeacon|WebSocket|EventSource|cookie|@[a-z0-9-]+\./i);
     assert.deepEqual([...source.matchAll(/require\('([^']+)'\)/g)].map(match => match[1]), ['node:crypto',
-        '../../api/shared/assessmentEngine/ncscAssessmentEvaluator', '../../api/shared/assessmentEngine/assessmentEvaluator', '../../api/shared/ncscQuestionnaireMetadata']);
+        '../../api/shared/assessmentEngine/ncscProfileSet', '../../api/shared/assessmentEngine/assessmentEvaluatorV2', '../../api/shared/ncscQuestionnaireMetadata']);
     for (const fixtureName of ['Harbour Workshop', 'Kauri Studio', 'Harbour City Services', 'synthetic-tenant', 'No Fries Demo Customer']) assert.ok(!html.includes(fixtureName), fixtureName);
     const model = demo.projection('2026-11-13T01:00:00.000Z');
     assert.match(model.context.displayName, /\(fictional\)$/);
@@ -138,12 +142,21 @@ test('the browser shims match node:crypto, Buffer and util for the inputs the en
 test('results match the real server path for the same answers, in Node and in the bundled browser engine', async () => {
     // Real server path: the durable store's version builder and the API projection.
     const fixture = ncscFixture(), context = { scope: fixture.scope, identity: { subjectKey: fixture.subjectKey } };
-    let version = null;
-    for (const command of [createCommand('assessment-a'), saveCommand('assessment-a', 0, 'save-a', mixedResponses()), submitCommand('assessment-a')]) {
-        version = makeVersion(stableIntent(context, command), command.idempotencyKey, version, fixture.state.tenantAggregate, NOW);
+    // The v2 profile takes effect on 18 Nov 2026, so the server path runs after that.
+    const V2_AT = '2026-11-20T09:00:00.000Z';
+    let version = null, detail = null;
+    const flag = process.env.NOFRIES_NCSC_PROFILE_V2;
+    process.env.NOFRIES_NCSC_PROFILE_V2 = 'true';
+    try {
+        for (const command of [createCommand('assessment-a'), saveCommand('assessment-a', 0, 'save-a', mixedResponses()), submitCommand('assessment-a')]) {
+            version = makeVersion(stableIntent(context, command), command.idempotencyKey, version, fixture.state.tenantAggregate, V2_AT, NCSC_V2_CONTEXT);
+        }
+        detail = projectNcscDetail(version);
+    } finally {
+        if (flag === undefined) delete process.env.NOFRIES_NCSC_PROFILE_V2; else process.env.NOFRIES_NCSC_PROFILE_V2 = flag;
     }
     const metadata = createNcscQuestionnaireMetadata();
-    const serverResult = questionnaire.resultModel(projectNcscDetail(version), metadata, fixture.scope.organisationId);
+    const serverResult = questionnaire.resultModel(detail, metadata, fixture.scope.organisationId);
     assert.ok(serverResult && /^\d/.test(serverResult.attainment));
 
     const nodeBackend = demo.createBackend(demo.createStore(recordingStorage()), steppingClock());
@@ -167,10 +180,10 @@ test('the fictional earlier assessment is scored by the real rules and seeds Ove
     const backend = demo.createBackend(demo.createStore(recordingStorage()), steppingClock());
     const client = createClient({ metadata: backend.metadata, fetch: backend.fetch });
     const listed = await client.list({ limit: 50 });
-    assert.deepEqual(listed.assessments.map(item => [item.assessmentId, item.status, item.progress.answered]), [[demo.EARLIER_ID, 'submitted', 14]]);
+    assert.deepEqual(listed.assessments.map(item => [item.assessmentId, item.status, item.progress.answered]), [[demo.EARLIER_ID, 'submitted', 16]]);
     const earlier = questionnaire.resultModel((await client.read(demo.EARLIER_ID)).assessment, backend.metadata, demo.ORGANISATION_ID);
-    assert.equal(earlier.attainment, '28.6%–42.9%', 'lower bound first');
-    assert.equal(backend.metadata.questions.length, 14);
+    assert.equal(earlier.attainment, '38.2%–51.1%', 'lower bound first');
+    assert.equal(backend.metadata.questions.length, 16);
 });
 
 test('saved steps replay after reload; unreadable or stale logs start afresh; reset clears only the demo key', async () => {
@@ -214,8 +227,8 @@ test('start mounts the real shell with the real Overview and Cyber Security work
     demo.start(dom.window);
     assert.equal(dom.window.fetch, demo.pageFetch);
     assert.equal(dom.root.querySelector('h1').textContent, 'Overview');
-    for (let index = 0; index < 20 && !/28\.6%–42\.9%/.test(dom.root.textContent); index++) await new Promise(resolve => setImmediate(resolve));
-    assert.match(dom.root.textContent, /Cyber baseline[\s\S]*28\.6%–42\.9%/);
+    for (let index = 0; index < 20 && !/38\.2%–51\.1%/.test(dom.root.textContent); index++) await new Promise(resolve => setImmediate(resolve));
+    assert.match(dom.root.textContent, /Cyber baseline[\s\S]*38\.2%–51\.1%/);
     dom.root.querySelectorAll('a').find(link => link.textContent.includes('Cyber Security')).click();
     for (let index = 0; index < 20 && !/Start an assessment/.test(dom.root.textContent); index++) await new Promise(resolve => setImmediate(resolve));
     assert.match(dom.root.textContent, /Cyber security assessment[\s\S]*Start an assessment/);
@@ -225,7 +238,7 @@ test('start mounts the real shell with the real Overview and Cyber Security work
     assert.equal(storage.values.get('nofries.unrelated'), 'kept');
     assert.match(nodes['try-demo-status'].textContent, /^Demo reset\./);
     assert.equal(dom.root.querySelector('h1').textContent, 'Overview');
-    assert.deepEqual([...storage.touched].sort(), [demo.LEGACY_STORAGE_KEY, demo.STORAGE_KEY].sort());
+    assert.deepEqual([...storage.touched].sort(), [...demo.LEGACY_STORAGE_KEYS, demo.STORAGE_KEY].sort());
 });
 
 test('a malformed request body is a 400 ncsc_input_invalid problem and records nothing', async () => {
@@ -240,20 +253,23 @@ test('a malformed request body is a 400 ncsc_input_invalid problem and records n
     assert.equal(storage.values.has(demo.STORAGE_KEY), false);
 });
 
-test('start removes the legacy v1 key once, and reset removes it again with the current key', () => {
+test('start removes the legacy v1 and v2 keys once, and reset removes them again with the current key', () => {
     const dom = createDom();
-    const storage = recordingStorage({ [demo.LEGACY_STORAGE_KEY]: '{"answers":{}}', 'nofries.unrelated': 'kept' });
+    const legacy = () => Object.fromEntries(demo.LEGACY_STORAGE_KEYS.map(key => [key, '{"answers":{}}']));
+    const storage = recordingStorage({ ...legacy(), 'nofries.unrelated': 'kept' });
     const nodes = { 'try-demo-dashboard': dom.root, 'try-demo-status': dom.document.createElement('p'), 'try-demo-reset': dom.document.createElement('button') };
     dom.document.getElementById = id => nodes[id];
     Object.assign(dom.window, { document: dom.document, localStorage: storage, NoFriesDashboard: shell, NoFriesNcscAssessmentClient: { createClient },
         NoFriesNcscQuestionnaire: questionnaire });
     dom.window.location.pathname = '/try';
     demo.start(dom.window);
-    assert.equal(demo.LEGACY_STORAGE_KEY, 'nofries.tryDemo.v1');
-    assert.equal(storage.values.has(demo.LEGACY_STORAGE_KEY), false);
-    storage.setItem(demo.LEGACY_STORAGE_KEY, '{"answers":{}}'); storage.setItem(demo.STORAGE_KEY, JSON.stringify({ log: [] }));
+    // v2 held answers for the earlier 14-question set; the 16-question demo starts afresh under v3.
+    assert.deepEqual([...demo.LEGACY_STORAGE_KEYS], ['nofries.tryDemo.v1', 'nofries.tryDemo.v2']);
+    assert.equal(demo.STORAGE_KEY, 'nofries.tryDemo.v3');
+    for (const key of demo.LEGACY_STORAGE_KEYS) assert.equal(storage.values.has(key), false, key);
+    Object.entries(legacy()).forEach(([key, value]) => storage.setItem(key, value)); storage.setItem(demo.STORAGE_KEY, JSON.stringify({ log: [] }));
     nodes['try-demo-reset'].click();
-    assert.equal(storage.values.has(demo.LEGACY_STORAGE_KEY), false);
+    for (const key of demo.LEGACY_STORAGE_KEYS) assert.equal(storage.values.has(key), false, key);
     assert.equal(storage.values.has(demo.STORAGE_KEY), false);
     assert.equal(storage.values.get('nofries.unrelated'), 'kept');
 });

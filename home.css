@@ -1135,8 +1135,13 @@ body[data-page="operator-dashboard"] .site-details > summary { display: flex; al
     .sample-result-table tr { padding: 12px 0; border-bottom: 1px solid var(--line); }
     .sample-result-table :is(th, td) { padding: 0; border-bottom: 0; }
     .sample-result-table tbody th { margin-bottom: 6px; }
-    .sample-result-table td { display: flex; justify-content: space-between; gap: 16px; white-space: normal; }
-    .sample-result-table td::before { content: attr(data-label); content: attr(data-label) / ""; color: var(--muted); }
+    /* Label left, figure right on one unbroken line, bar full width beneath (#716).
+       The page's "break anywhere" wrapping must not reach a figure or a label. */
+    .sample-result-table { overflow-wrap: normal; }
+    .sample-result-table td { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; gap: 4px 16px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+    .sample-result-table td::before { content: attr(data-label); content: attr(data-label) / ""; color: var(--muted); white-space: normal; }
+    .sample-result-table td > .sample-bar { grid-column: 1 / -1; }
+    .sample-result-table td + td { margin-top: 8px; }
 }
 .sample-result-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 24px; }
 .sample-result-actions > a:not(.button) { display: inline-flex; align-items: center; min-height: 46px; color: var(--ink); font-weight: 700; text-decoration: underline; text-underline-offset: 5px; }
@@ -1470,13 +1475,14 @@ body[data-page="public-error"] .public-shell { min-height: 0; }
 .email-settings-list > li { border-top: 1px solid var(--line-strong); padding-block: 16px; }
 .organisation-card .email-settings-list h2 { margin: 0 0 6px; font-size: 1.15rem; }
 
-/* Phones: the header keeps the brand (unless the homepage hero is shown) and Log in. The other page links
-   live in the footer, laid out as a tidy two-column list with large targets. */
+/* Phones: the brand sits on its own row (unless the homepage hero is shown) and the page links wrap on
+   the row below it with Log in at the end, each a 44px target (#670). The footer repeats them as a
+   two-column list with large targets. */
 @media (max-width: 700px) {
-    body .site-header:has(> nav[aria-label="Main navigation"]) { grid-template-columns: minmax(0, 1fr) auto; align-items: center; row-gap: 0; }
-    body .site-header nav[aria-label="Main navigation"] { grid-column: auto; grid-row: auto; justify-self: end; justify-content: flex-end; }
-    body .site-header nav[aria-label="Main navigation"] > a:not(.site-login, .homepage-login) { display: none; }
-    body .site-header nav[aria-label="Main navigation"] > :is(.site-login, .homepage-login) { margin-left: 0; white-space: nowrap; }
+    body .site-header:has(> nav[aria-label="Main navigation"]) { grid-template-columns: minmax(0, 1fr); align-items: center; row-gap: 2px; }
+    body .site-header nav[aria-label="Main navigation"] { display: flex; flex-wrap: wrap; grid-column: 1 / -1; grid-row: auto; justify-self: stretch; justify-content: flex-start; gap: 0 18px; }
+    body .site-header nav[aria-label="Main navigation"] > a { display: inline-flex; align-items: center; min-height: 44px; }
+    body .site-header nav[aria-label="Main navigation"] > :is(.site-login, .homepage-login) { margin-left: auto; white-space: nowrap; }
     body[data-page="dashboard-home"]:has(#gatewayPublic:not([hidden])) .site-header > .brand { display: none; }
     body[data-page="dashboard-home"]:has(#gatewayPublic:not([hidden])) .site-header nav[aria-label="Main navigation"] { grid-column: 2; }
 
@@ -1516,6 +1522,8 @@ body[data-page="public-error"] .public-shell { min-height: 0; }
 body[data-page="product-roadmap"] { --rm-check: var(--green); --rm-fix: var(--red); --rm-prove: #9c6f17; --rm-run: #40382e; }
 .public-roadmap-intro { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: 24px; align-items: end; max-width: none; margin-bottom: 20px; }
 .public-roadmap-intro h1 { font-size: clamp(2.2rem, 5vw, 3.4rem); margin: 8px 0 12px; text-wrap: balance; }
+/* The sample result reuses the intro block but reads as one column: eyebrow, name, lead (#716). */
+.sample-result .public-roadmap-intro { display: block; max-width: 780px; }
 body[data-page="product-roadmap"] .public-roadmap-intro .roadmap-service { color: var(--ink-soft); font-size: 0.95rem; margin: 8px 0 0; }
 .roadmap-counts { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
 .roadmap-counts a { display: block; min-height: 44px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--paper, #f6f2ea); color: var(--muted); font-size: .85rem; text-decoration: none; }

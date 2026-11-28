@@ -17,7 +17,7 @@ const SOURCES = ['api/shared/protectedAssets/dashboardRegistry.js', 'api/shared/
     'api/shared/protectedAssets/assessmentExplanation.js', 'api/shared/protectedAssets/organisationPicture.js',
     'demo/try/node-shims.js', 'demo/try/try-demo.js'];
 // Server modules bundled unchanged so the page scores with the real rules.
-const ENGINE_ENTRIES = ['api/shared/assessmentEngine/ncscAssessmentEvaluator.js', 'api/shared/assessmentEngine/assessmentEvaluator.js',
+const ENGINE_ENTRIES = ['api/shared/assessmentEngine/ncscProfileSet.js', 'api/shared/assessmentEngine/assessmentEvaluatorV2.js',
     'api/shared/ncscQuestionnaireMetadata.js'];
 const BUILT_INS = { crypto: 'crypto', 'node:crypto': 'crypto', util: 'util', 'node:util': 'util' };
 const read = file => fs.readFileSync(path.join(ROOT, file), 'utf8');
@@ -50,7 +50,7 @@ function engineBundle() {
         '        const target = entry[0][request];\n        return target === "crypto" || target === "util" ? shims[target] : load(target);\n' +
         '    }, shims.Buffer);\n    return module.exports;\n}\n' +
         'root.NoFriesTryEngine = function () {\n    return { evaluator: load(' + JSON.stringify(ENGINE_ENTRIES[0]) + '), core: load(' +
-        JSON.stringify(ENGINE_ENTRIES[1]) + '),\n        metadata: load(' + JSON.stringify(ENGINE_ENTRIES[2]) + ').createNcscQuestionnaireMetadata(),\n' +
+        JSON.stringify(ENGINE_ENTRIES[1]) + '),\n        metadata: load(' + JSON.stringify(ENGINE_ENTRIES[2]) + ').createNcscQuestionnaireMetadataV2(),\n' +
         '        sha256: function (text) { return shims.crypto.createHash("sha256").update(text, "utf8").digest("hex"); } };\n};\n' +
         '}(globalThis));';
 }

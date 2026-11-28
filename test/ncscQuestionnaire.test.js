@@ -1107,6 +1107,34 @@ describe('questionnaire draft progress and unanswered navigation', () => {
         expect(h.records).toHaveLength(1); ui.controller.destroy();
     });
 
+    test('the question bar offers Review and submit on the last question and once every answer is in (#725)', async () => {
+        const h = await backend(), ui = await createInUi(h), questions = metadata().questions;
+        try {
+            const review = () => byId(ui, 'ncsc-navigation-review'), ready = () => byId(ui, 'ncsc-navigation-ready');
+            expect(review()).toBeFalsy(); expect(ready().hidden).toBe(true);
+            expect(control(ui, 'Next question').className).toBe('dashboard-button');
+            // Last question, not all answered: Review replaces the dead-end Next.
+            navigate(ui, questions.length - 1);
+            expect(review().className).toBe('dashboard-button');
+            expect(review().closest('.ncsc-question-navigation')).toBeTruthy();
+            expect(control(ui, 'Next question').hidden).toBe(true); expect(ready().hidden).toBe(true);
+            navigate(ui, 0); expect(review()).toBeFalsy(); expect(control(ui, 'Next question').hidden).toBe(false);
+            // Every question answered: Review is offered from any question, with a status line.
+            questions.forEach((question, index) => choose(ui, index, 'yes'));
+            navigate(ui, 2);
+            expect(review().className).toBe('dashboard-button');
+            expect(control(ui, 'Next question').className).toContain('dashboard-button-secondary');
+            expect(control(ui, 'Next question').hidden).toBe(false);
+            expect(ready().hidden).toBe(false);
+            expect(ready().textContent).toBe(`All ${questions.length} answered. Review and submit when ready.`);
+            // Clearing an answer takes the status line away; Review returns to the last question only.
+            control(ui, 'Clear answer').click();
+            expect(review()).toBeFalsy(); expect(ready().hidden).toBe(true);
+            choose(ui, 2, 'no');
+            review().click(); expect(ui.root.querySelector('.ncsc-review')).toBeTruthy();
+        } finally { ui.controller.destroy(); }
+    });
+
     test('question navigation keeps Previous and Next first, with the jump buttons behind More in tab order', async () => {
         const h = await backend(), ui = await createInUi(h);
         try {
@@ -1154,6 +1182,53 @@ describe('questionnaire draft progress and unanswered navigation', () => {
         } finally { gate.resolve(); ui.controller.destroy(); }
     });
 
+    test('review names each skipped question with a jump to it (#669)', async () => {
+        const h = await backend(), ui = await createInUi(h), questions = metadata().questions;
+        try {
+            questions.forEach((question, index) => { if (index !== 6) choose(ui, index, 'yes'); });
+            control(ui, 'Review and submit').click();
+            const jumps = byId(ui, 'ncsc-review-jumps');
+            expect(jumps.querySelectorAll('button')).toHaveLength(1);
+            const jump = jumps.querySelector('button');
+            expect(jump.textContent).toMatch(/^Question 7: /);
+            jump.click();
+            expect(ui.root.querySelector('.ncsc-review')).toBeNull();
+            expect(byId(ui, `ncsc-answer-${questions[6].id}-yes`)).toBeTruthy();
+        } finally { ui.controller.destroy(); }
+    });
+
+    test('creating an assessment does not say "Saving your answers" (#699)', async () => {
+        const h = await backend(), gate = deferred(); let held = true;
+        const client = { ...h.client, save: async (command, settings) => { if (held) await gate.promise; return h.client.save(command, settings); } };
+        const ui = mountUi(h, { client }); await until(() => control(ui, 'Start an assessment'));
+        try {
+            control(ui, 'Start an assessment').click(); enter(byId(ui, 'ncsc-scope'), 'Synthetic declared cloud scope.');
+            control(ui, 'Create assessment').click();
+            await until(() => ui.root.textContent.includes('Setting up your assessment.'));
+            expect(ui.root.textContent).not.toContain('Saving your answers');
+        } finally { held = false; gate.resolve(); ui.controller.destroy(); }
+    });
+
+    test('answers tapped while an autosave is in flight are all saved (#699 M4-04)', async () => {
+        const h = await backend(), gate = deferred(); let held = true;
+        const client = { ...h.client, save: async (command, settings) => { if (held) await gate.promise; return h.client.save(command, settings); } };
+        const ui = await createInUi(h, { client, autosaveIdleMs: 40 }), questions = metadata().questions;
+        try {
+            choose(ui, 0, 'yes'); await until(() => h.calls.length > 0 && ui.root.querySelector('.ncsc-status').textContent.startsWith('Saving'));
+            choose(ui, 1, 'no'); choose(ui, 2, 'partial');
+            const tile = byId(ui, `ncsc-answer-${questions[2].id}-partial`), next = control(ui, 'Next question');
+            expect(tile.checked).toBe(true);
+            held = false; gate.resolve();
+            await until(() => ui.root.textContent.includes('Your progress is saved.') && !ui.root.textContent.includes('Newer changes are not saved yet'), 4000);
+            // The confirmed save did not rebuild the question, so a tap in progress lands.
+            expect(byId(ui, `ncsc-answer-${questions[2].id}-partial`)).toBe(tile); expect(control(ui, 'Next question')).toBe(next);
+            expect(ui.root.querySelector('.ncsc-draft-observations').textContent).toContain('3 of 14 responses saved');
+            const saved = h.records.at(-1).payload.responses;
+            const option = id => saved.find(item => item.itemId === id)?.optionId;
+            expect([option(questions[0].id), option(questions[1].id), option(questions[2].id)]).toEqual(['yes', 'no', 'partial']);
+        } finally { held = false; gate.resolve(); ui.controller.destroy(); }
+    });
+
     test('the focused function step survives an autosave repaint', async () => {
         const h = await backend(), gate = deferred();
         const client = { ...h.client, save: async (command, settings) => { await gate.promise; return h.client.save(command, settings); } };
@@ -1177,7 +1252,9 @@ describe('questionnaire draft progress and unanswered navigation', () => {
         oldJump.click(); oldNext.click(); oldPrevious.click(); expect(currentQuestion(ui)).toBe(1);
         control(ui, 'Save progress').click(); await until(() => ui.root.textContent.includes('Your progress is saved.'));
         const before = ui.root.textContent;
-        expect(control(ui, metadata().domains.at(-1).title)).not.toBe(oldStep); oldStep.click(); oldJump.click(); oldNext.click(); oldPrevious.click();
+        // A quiet autosave keeps the stepper mounted (#699), so the step control is
+        // still the live one; question controls replaced by answering stay inert.
+        expect(control(ui, metadata().domains.at(-1).title)).toBe(oldStep); oldJump.click(); oldNext.click(); oldPrevious.click();
         expect(currentQuestion(ui)).toBe(1); expect(ui.root.textContent).toBe(before); ui.controller.destroy();
     });
 
@@ -3231,12 +3308,15 @@ describe('questionnaire native unload lifecycle and task hierarchy', () => {
         } finally { ui.controller.destroy(); }
     });
 
-    test('Save stays primary and Review opens without writing', async () => {
+    test('Review and submit is a button with one primary action below the question, and opens without writing', async () => {
         const h = await backend(), ui = await createInUi(h);
         try {
             const save = control(ui, 'Save progress'), submit = control(ui, 'Review and submit');
             expect(save.classList.contains('dashboard-button')).toBe(true);
-            expect(submit.classList.contains('dashboard-text-button')).toBe(true);
+            // #725: no longer a borderless text link; Save or Review is primary, never both.
+            expect(submit.classList.contains('dashboard-text-button')).toBe(false);
+            expect(submit.classList.contains('dashboard-button')).toBe(true);
+            expect([save, submit].filter(item => !item.classList.contains('dashboard-button-secondary'))).toHaveLength(1);
             expect(submit.getAttribute('aria-describedby')).toBeNull();
             submit.click(); expect(ui.root.querySelector('.ncsc-review')).toBeTruthy();
             expect(h.records).toHaveLength(1);
@@ -3802,7 +3882,7 @@ describe('insurer and customer questionnaire answers', () => {
             const lines = [item.question, 'Suggested answer: ' + item.answer, item.basis, item.action];
             if (item.answer === 'Yes') expect(item.evidence).toBe('');
             else {
-                expect(item.evidence).toMatch(/^Evidence: [^\n]+\.$/);
+                expect(item.evidence).toMatch(/^What to gather: [^\n]+\.$/);
                 lines.push(item.evidence);
             }
             expect(blocks[index]).toBe(lines.join('\n'));
@@ -3854,7 +3934,16 @@ describe('insurer and customer questionnaire answers', () => {
             control(ui, 'Copy answers').click(); await until(() => ui.root.textContent.includes('Summary selected.'));
             expect(ui.document.activeElement).toBe(input);
             dom.window.navigator = {}; control(ui, 'Copy answers').click(); expect(ui.document.activeElement).toBe(input);
+            // #662: only the answers go to paper; everything else is hidden for print, then restored.
+            const answers = ui.root.querySelector('.ncsc-questionnaire-answers');
+            dom.window.print.mockImplementationOnce(() => {
+                expect(answers.classList.contains('picture-print-only')).toBe(true);
+                expect(ui.root.querySelectorAll('.picture-print-hide').length).toBeGreaterThan(0);
+                expect(answers.querySelectorAll('.picture-print-hide')).toHaveLength(0);
+            });
             control(ui, 'Print answers').click(); expect(dom.window.print).toHaveBeenCalledTimes(1);
+            expect(answers.classList.contains('picture-print-only')).toBe(false);
+            expect(ui.root.querySelectorAll('.picture-print-hide')).toHaveLength(0);
             expect(h.calls).toHaveLength(before);
         } finally { ui.controller.destroy(); }
     });
@@ -3885,12 +3974,13 @@ describe('insurer and customer questionnaire answers', () => {
 describe('campaign Results next steps', () => {
     const renderer = require('../api/shared/protectedAssets/ncscQuestionnaire');
     const cases = [
-        ['insurance', ['ncsc-questionnaire-answers', 'ncsc-board-next-step picture-summary', 'picture-top-gaps', 'ncsc-next-steps']],
-        ['supplier', ['ncsc-questionnaire-answers', 'picture-top-gaps', 'ncsc-next-steps', 'ncsc-board-next-step picture-summary']],
-        ['board', ['ncsc-board-next-step picture-summary', 'picture-top-gaps', 'ncsc-next-steps', 'ncsc-questionnaire-answers']],
+        // #657: one offer block, straight after the top gaps (after the payment step for scam).
+        ['insurance', ['ncsc-questionnaire-answers', 'ncsc-board-next-step picture-summary', 'picture-top-gaps', 'picture-next-steps-help', 'ncsc-next-steps']],
+        ['supplier', ['ncsc-questionnaire-answers', 'picture-top-gaps', 'picture-next-steps-help', 'ncsc-next-steps', 'ncsc-board-next-step picture-summary']],
+        ['board', ['ncsc-board-next-step picture-summary', 'picture-top-gaps', 'picture-next-steps-help', 'ncsc-next-steps', 'ncsc-questionnaire-answers']],
         ['scam', ['ncsc-payment-next-step', 'picture-next-steps-help', 'picture-top-gaps', 'ncsc-next-steps', 'ncsc-board-next-step picture-summary', 'ncsc-questionnaire-answers']],
-        ['', ['picture-top-gaps', 'ncsc-next-steps', 'ncsc-board-next-step picture-summary', 'ncsc-questionnaire-answers']],
-        ['unrecognised', ['picture-top-gaps', 'ncsc-next-steps', 'ncsc-board-next-step picture-summary', 'ncsc-questionnaire-answers']]
+        ['', ['picture-top-gaps', 'picture-next-steps-help', 'ncsc-next-steps', 'ncsc-board-next-step picture-summary', 'ncsc-questionnaire-answers']],
+        ['unrecognised', ['picture-top-gaps', 'picture-next-steps-help', 'ncsc-next-steps', 'ncsc-board-next-step picture-summary', 'ncsc-questionnaire-answers']]
     ];
     const campaignDom = campaign => {
         const dom = interactiveDom();
@@ -3920,7 +4010,9 @@ describe('campaign Results next steps', () => {
                 control(ui, 'Print board summary').click(); expect(dom.window.print).toHaveBeenCalledTimes(1);
             }
             await until(() => panel.querySelector('.picture-next-steps-help').querySelector('a')?.href === '/contact.html?service=managed_security_90');
-            expect(panel.children.at(-1).querySelector('a').href).toBe('/contact.html?service=managed_security_90');
+            const offers = panel.querySelectorAll('a').filter(link => link.textContent === 'Fix these with No Fries');
+            expect(offers).toHaveLength(1);
+            expect(panel.querySelector('.picture-next-steps-help').textContent).toContain('NZ$1,250 + GST');
             expect(panel.querySelector('.picture-next-steps-help').querySelector('a').href).toBe('/contact.html?service=managed_security_90');
             expect(dom.window.fetch).toHaveBeenCalledWith('/api/enquiry', expect.objectContaining({ method: 'GET' }));
             expect(dom.window.fetch).toHaveBeenCalledTimes(1);
@@ -3992,7 +4084,8 @@ describe('campaign Results next steps', () => {
             await until(() => control(ui, label));
             expect(control(ui, 'Copy answers')).toBeFalsy(); expect(control(ui, 'Print answers')).toBeFalsy();
             expect(control(ui, 'Copy board summary')).toBeFalsy(); expect(control(ui, 'Print board summary')).toBeFalsy();
-            expect(ui.root.querySelector('.picture-next-steps-help')?.querySelector('a')).toBeFalsy();
+            // #657: the offer link opens a public page, so it shows before details are saved.
+            expect(ui.root.querySelector('.picture-next-steps-help').querySelector('a')).toBeTruthy();
             status = 'ready'; ui.root.querySelectorAll('button').filter(b => b.textContent === label).forEach(b => b.click());
             await until(() => control(ui, 'Copy answers'));
             if (campaign === 'board' || campaign === 'insurance') expect(control(ui, 'Copy board summary')).toBeTruthy();

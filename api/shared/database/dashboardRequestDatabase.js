@@ -55,7 +55,10 @@ const NCSC_OPERATIONS = ['ncsc.list', 'ncsc.read', 'ncsc.execute'];
 const IMPROVEMENT_OPERATIONS = ['improvement.list', 'improvement.execute'];
 const CONTACT_OPERATION = 'contact.request';
 const DETAILS_OPERATIONS = ['representative.read', 'representative.record'];
+// Organisation profile (#608): any member reads; saving needs organisation.manage.
+const PROFILE_OPERATIONS = ['organisation.profile.read', 'organisation.profile.write'];
 const { RepresentativeDetailsError } = require('../customerSignup/deferredRepresentativeDetails');
+const { OrganisationProfileError } = require('../organisationProfile/organisationProfileService');
 const SNAPSHOT_FIELDS = ['tenantAggregate', 'membershipState', 'entitlementState', 'flags', 'advisorAssignments', 'summary'];
 const deniedErrors = new WeakSet();
 const unavailableErrors = new WeakSet();
@@ -89,6 +92,10 @@ function mapped(error, operation = 'admission.read', denial = null) {
         if (isDenied) return new RepresentativeDetailsError('representative_details_access_denied', 403);
         return error instanceof RepresentativeDetailsError ? error : new RepresentativeDetailsError();
     }
+    if (PROFILE_OPERATIONS.includes(operation)) {
+        if (isDenied) return new OrganisationProfileError('organisation_profile_access_denied', 403);
+        return error instanceof OrganisationProfileError ? error : new OrganisationProfileError();
+    }
     if (operation === CONTACT_OPERATION) {
         if (isDenied) return new ContactRequestError('contact_request_access_denied', 403);
         if (error instanceof ContactRequestError || error instanceof RepresentativeDetailsError) return error;
@@ -114,7 +121,7 @@ function mapped(error, operation = 'admission.read', denial = null) {
 function configuration(input) {
     try {
         if (!input || isProxy(input)) throw new Error();
-        const optional = ['paidFrameworksEnabled', 'ncscEnabled', 'improvementEnabled', 'contactRequestsEnabled', 'representativeDetailsEnabled'].filter(key => Object.prototype.hasOwnProperty.call(input, key));
+        const optional = ['paidFrameworksEnabled', 'ncscEnabled', 'improvementEnabled', 'contactRequestsEnabled', 'representativeDetailsEnabled', 'organisationProfileEnabled'].filter(key => Object.prototype.hasOwnProperty.call(input, key));
         fields(input, ['pool', 'clock', 'instanceId', 'historyBudget', 'captureRequest',
             'readExternalRuntimeEpoch', 'newId', 'resolveSubmissionQuota', ...optional]);
         if (optional.some(key => input[key] !== true)) throw new Error();
@@ -395,6 +402,15 @@ function currentContact(inv, operation, authority, at) {
             { ...operation.context.scope, subjectKey: operation.context.identity.subjectKey, permission: 'representative.record', module: 'overview' }, null, at);
     } catch (_) { inv.deny(); }
 }
+function currentProfile(inv, operation, authority, at) {
+    if (!PROFILE_OPERATIONS.includes(operation.name)) return;
+    try {
+        if (at < operation.context.resolvedAt) throw new Error();
+        resolvePortalPermission(authority.membershipState, authority.tenantAggregate, { ...operation.context.scope,
+            subjectKey: operation.context.identity.subjectKey,
+            permission: operation.name === 'organisation.profile.write' ? 'organisation.manage' : 'overview.read', module: 'overview' }, null, at);
+    } catch (_) { inv.deny(); }
+}
 async function locator(inv) {
     let client, started = false, discard = false;
     inv.now();
@@ -474,6 +490,7 @@ function currentAuthorityAt(inv, operation, evidence, at) {
     currentMember(inv, authority, binding, at);
     currentImprovement(inv, operation, authority, at);
     currentContact(inv, operation, authority, at);
+    currentProfile(inv, operation, authority, at);
     currentPaidAccess(inv, operation, authority, at);
     currentPaidStatus(inv, operation, authority, at);
     if (operation.name === 'evidence.read') {
@@ -612,11 +629,12 @@ async function writeAudit(inv, operation, event) {
         value.tenantId !== c.scope.tenantId || value.organisationId !== c.scope.organisationId) inv.deny();
     const evidenceRead = operation.name === 'evidence.read';
     const improvement = IMPROVEMENT_OPERATIONS.includes(operation.name), contact = operation.name === CONTACT_OPERATION, details = operation.name === 'representative.record';
+    const profile = operation.name === 'organisation.profile.write';
     const action = operation.name === 'framework.write' ? 'assessment.write' : improvement ? operation.name === 'improvement.execute' ? 'improvement.write' : 'improvement.read'
-        : details ? 'representative.record' : contact ? CONTACT_AUDIT.action : evidenceRead ? 'evidence.read' : 'assessment.read';
-    if (!['ncsc.list', 'ncsc.read', 'evidence.read', ...PAID_OPERATIONS, 'representative.record', CONTACT_OPERATION, ...IMPROVEMENT_OPERATIONS].includes(operation.name) ||
+        : profile ? 'organisation.manage' : details ? 'representative.record' : contact ? CONTACT_AUDIT.action : evidenceRead ? 'evidence.read' : 'assessment.read';
+    if (!['ncsc.list', 'ncsc.read', 'evidence.read', ...PAID_OPERATIONS, 'representative.record', 'organisation.profile.write', CONTACT_OPERATION, ...IMPROVEMENT_OPERATIONS].includes(operation.name) ||
         value.schemaVersion !== 1 || value.eventType !== 'dashboard.operation' || value.action !== action ||
-        value.module !== (improvement ? 'improvement_plan' : details ? 'overview' : contact ? CONTACT_AUDIT.module : evidenceRead ? 'evidence' : 'cyber_security') ||
+        value.module !== (improvement ? 'improvement_plan' : details || profile ? 'overview' : contact ? CONTACT_AUDIT.module : evidenceRead ? 'evidence' : 'cyber_security') ||
         value.result !== 'succeeded') inv.unavailable();
     const current = () => {
         if (inv.owner !== operation || operation.finished || operation.active !== active || active.phase !== 'work') throw privateError(false);
@@ -649,14 +667,15 @@ function operationPair(inv, database, routing, resolvedAt, name, context, profil
     let paidDisclosureEvidence = null;
     const contact = name === CONTACT_OPERATION;
     const details = DETAILS_OPERATIONS.includes(name);
-    const known = OPERATIONS.includes(name) || IMPROVEMENT_OPERATIONS.includes(name) || contact || details || paid;
+    const profile = PROFILE_OPERATIONS.includes(name);
+    const known = OPERATIONS.includes(name) || IMPROVEMENT_OPERATIONS.includes(name) || contact || details || profile || paid;
     if (!known || paid && inv.options.paidFrameworksEnabled !== true || IMPROVEMENT_OPERATIONS.includes(name) && inv.options.improvementEnabled !== true ||
-        contact && inv.options.contactRequestsEnabled !== true || details && inv.options.representativeDetailsEnabled !== true || inv.owner ||
+        contact && inv.options.contactRequestsEnabled !== true || details && inv.options.representativeDetailsEnabled !== true || profile && inv.options.organisationProfileEnabled !== true || inv.owner ||
         routing.portfolio && name !== 'improvement.list') {
         throw mapped(privateError(false), known ? name : 'admission.read');
     }
     try { inv.now(); } catch (error) { throw mapped(error, name); }
-    if (IMPROVEMENT_OPERATIONS.includes(name) || contact || details || paid) {
+    if (IMPROVEMENT_OPERATIONS.includes(name) || contact || details || profile || paid) {
         try {
             requireTenantRequestContext(context);
             if (context.requestId !== inv.capture.requestId || !equal(context.scope, routing.scope) ||
@@ -728,6 +747,7 @@ function operationPair(inv, database, routing, resolvedAt, name, context, profil
                     currentMember(inv, authority, active.context.binding, at);
                     currentImprovement(inv, operation, authority, at);
                     currentContact(inv, operation, authority, at);
+                    currentProfile(inv, operation, authority, at);
                     currentPaidAccess(inv, operation, authority, at);
                     active.phase = 'work';
                     const client = Object.freeze({

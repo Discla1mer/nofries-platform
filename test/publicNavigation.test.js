@@ -63,11 +63,20 @@ test('the shared header styles are defined once and keep links visible on phones
     for (const name of PAGES) expect([name, read(name).includes('href="/home.css"')]).toEqual([name, true]);
 });
 
-test('on phones the header keeps Log in and the footer lists the page links', () => {
+test('on phones the header shows every page link and Log in as 44px targets, and the footer lists them too (#670)', () => {
     const css = read('home.css');
     const phone = css.match(/@media \(max-width: 700px\) \{\s*body \.site-header:has\(> nav\[aria-label="Main navigation"\]\)[\s\S]*?\n\}/);
     expect(phone).not.toBeNull();
-    expect(phone[0]).toMatch(/nav\[aria-label="Main navigation"\] > a:not\(\.site-login, \.homepage-login\) \{ display: none; \}/);
+    // No rule may hide the main navigation or its links at phone width again.
+    expect(phone[0]).not.toMatch(/nav\[aria-label="Main navigation"\][^{]*\{[^}]*display: none/);
+    expect(phone[0]).toMatch(/nav\[aria-label="Main navigation"\] \{ display: flex; flex-wrap: wrap; grid-column: 1 \/ -1;/);
+    expect(phone[0]).toMatch(/nav\[aria-label="Main navigation"\] > a \{ display: inline-flex; align-items: center; min-height: 44px; \}/);
+    for (const name of PAGES) {
+        const nav = read(name).match(/<nav aria-label="Main navigation">([\s\S]*?)<\/nav>/);
+        if (!nav) continue;
+        for (const href of ['/', '/pricing.html', '/managed-it.html', '/roadmap.html', '/contact.html'])
+            expect([name, href, nav[1].includes(`href="${href}"`)]).toEqual([name, href, true]);
+    }
     expect(phone[0]).toMatch(/body \.home-footer nav \{ display: grid;/);
     expect(phone[0]).toMatch(/min-height: 48px;/);
 });

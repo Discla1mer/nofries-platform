@@ -202,6 +202,21 @@ function scriptSourceDirective(contentSecurityPolicy) {
         .find((directive) => directive.startsWith('script-src '));
 }
 
+describe('short scam addresses (#697)', () => {
+    test.each(['/scams', '/scam', '/scams.html', '/scam.html'])('%s redirects to the invoice-scam page and keeps the campaign query', async route => {
+        const tagged = await request(app).get(`${route}?utm_source=meta&utm_medium=paid&utm_campaign=scam`);
+        expect(tagged.status).toBe(301);
+        expect(tagged.headers.location).toBe('/invoice-scams?utm_source=meta&utm_medium=paid&utm_campaign=scam');
+        expect((await request(app).get(route)).headers.location).toBe('/invoice-scams');
+        // The path is fixed: nothing in the request can point the redirect off-site.
+        expect((await request(app).get(`${route}?next=//evil.example`)).headers.location).toBe('/invoice-scams?next=//evil.example');
+    });
+    test('the destination is a real page', async () => {
+        const page = await request(app).get('/invoice-scams?utm_campaign=scam');
+        expect(page.status).toBe(200); expect(page.text).toContain('<h1');
+    });
+});
+
 describe('dormant dashboard document', () => {
     test('dashboard document serves the same generic hash-bound entry at both aliases without activating APIs', async () => {
         const first = await request(app).get('/dashboard?organisationId=untrusted-record');
@@ -255,7 +270,7 @@ describe('dormant dashboard document', () => {
             login: ['GET'], 'ncsc/assessments': ['GET', 'POST'], 'ncsc/assessments/*': ['GET', 'POST'],
             'improvement/*': ['GET', 'POST'], 'frameworks/*': ['GET', 'POST'],
             session: ['GET', 'POST'], organisations: ['GET'], 'organisations/paid-framework-status': ['GET'],
-            'representative-details': ['GET', 'POST'], selection: ['POST'], logout: ['POST'], 'contact-requests': ['POST'], 'work-queue': ['GET'],
+            'representative-details': ['GET', 'POST'], 'organisation-profile': ['GET', 'POST'], selection: ['POST'], logout: ['POST'], 'contact-requests': ['POST'], 'work-queue': ['GET'],
             bootstrap: ['GET'], 'app.js': ['GET'], 'dashboard.css': ['GET'],
             'modules/overview': ['GET'], 'modules/ai_governance': ['GET'], 'modules/cyber_security': ['GET'],
             'modules/it_optimisation': ['GET'], 'modules/improvement_plan': ['GET'], 'modules/evidence': ['GET'],

@@ -4163,7 +4163,7 @@ function registerRealPostgresTests() {
             // Administration below is explicit synthetic setup, never a route.
             async function httpSetup({ rawRuntimePool = runtimePool, base = null, principal: suppliedPrincipal = null,
                 requestBudgetMs = 60000, publish = true, prepareCanonical = null, ncsc = null, membershipValidUntil = END,
-                customerProvider = false, customerAccountType = null, ownDeferredAgreement = false, improvementEnabled = false, paidFrameworksEnabled = false, contactRequestsEnabled = false, representativeDetailsEnabled = false, questionnaireExportGateEnabled = false, contactRequestEmail = null, scope = null,
+                customerProvider = false, customerAccountType = null, ownDeferredAgreement = false, improvementEnabled = false, paidFrameworksEnabled = false, contactRequestsEnabled = false, representativeDetailsEnabled = false, questionnaireExportGateEnabled = false, organisationProfileEnabled = false, contactRequestEmail = null, scope = null,
                 appFactory = options => require('../../server').createNoFriesApp(options) } = {}) {
                 const { MemoryBrowserSessionStore } = require('../../api/shared/browserSessionStore');
                 const tenant = base ? base.operatorIdentity.identityTenantId : nextId();
@@ -4246,6 +4246,7 @@ function registerRealPostgresTests() {
                 if (improvementEnabled) dashboard.improvementEnabled = true;
                 if (paidFrameworksEnabled) dashboard.paidFrameworksEnabled = true;
                 if (contactRequestsEnabled) dashboard.contactRequestsEnabled = true;
+                if (organisationProfileEnabled) dashboard.organisationProfileEnabled = true;
                 if (representativeDetailsEnabled) dashboard.representativeDetailsEnabled = true;
                 if (questionnaireExportGateEnabled) dashboard.questionnaireExportGateEnabled = true;
                 if (contactRequestEmail) dashboard.contactRequestEmail = contactRequestEmail;
@@ -4423,9 +4424,9 @@ function registerRealPostgresTests() {
             });
             async function ncscHttpSetup({ capacity = 1, role = 'admin', configured = true, membershipValidUntil = END,
                 separateAdvisorWriteUntil = null, customerProvider = false, customerAccountType = null, ownDeferredAgreement = false, improvementEnabled = false,
-                contactRequestsEnabled = false, representativeDetailsEnabled = false, questionnaireExportGateEnabled = false, contactRequestEmail = null, appFactory, scope = null } = {}) {
+                contactRequestsEnabled = false, representativeDetailsEnabled = false, questionnaireExportGateEnabled = false, organisationProfileEnabled = false, contactRequestEmail = null, appFactory, scope = null } = {}) {
                 const quota = createNcscAdapters({ now: () => NOW });
-                const h = await httpSetup({ membershipValidUntil, customerProvider, customerAccountType, ownDeferredAgreement, improvementEnabled, contactRequestsEnabled, representativeDetailsEnabled, questionnaireExportGateEnabled, contactRequestEmail, appFactory, scope, ncsc: configured ? { resolveSubmissionQuota: quota.resolveSubmissionQuota } : null, prepareCanonical(initial) {
+                const h = await httpSetup({ membershipValidUntil, customerProvider, customerAccountType, ownDeferredAgreement, improvementEnabled, contactRequestsEnabled, representativeDetailsEnabled, questionnaireExportGateEnabled, organisationProfileEnabled, contactRequestEmail, appFactory, scope, ncsc: configured ? { resolveSubmissionQuota: quota.resolveSubmissionQuota } : null, prepareCanonical(initial) {
                     // Domain-created membership rows are frozen. Replace this
                     // synthetic seed's values without mutating domain output.
                     initial.membershipState = { ...initial.membershipState,
@@ -5087,6 +5088,8 @@ function registerRealPostgresTests() {
                 require('./deferredDetailsHttpPostgres')({ ncscHttpSetup, httpJson, getOwnerPool: () => ownerPool, loginClean, subject, nextId, generationHeader, createCommand, saveCommand, submitCommand });
                 require('./contactRequestHttpPostgres')({ ncscHttpSetup, httpJson, getOwnerPool: () => ownerPool,
                     loginClean, subject, nextId, generationHeader });
+                require('./organisationProfileHttpPostgres')({ ncscHttpSetup, httpJson, getOwnerPool: () => ownerPool,
+                    loginClean, subject, generationHeader });
 
                 test('HTTP Improvement Plan stays absent by default without private native reads', async () => {
                     const h = await ncscHttpSetup(), boundary = h.f.state.trace.length, before = await improvementSnapshot(h);
