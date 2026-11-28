@@ -819,7 +819,7 @@
         }
         function mountFreeCyber(childRoot, initialAssessmentId) {
             try {
-                const presentation = { generation: generation, detailsGate: options.representativeDetails ? gated : undefined };
+                const presentation = { generation: generation, displayName: model.context.displayName, detailsGate: options.representativeDetails ? gated : undefined };
                 if (showFrameworkComparison) presentation.appendFrameworkComparison = appendFrameworkComparison;
                 if (initialAssessmentId === undefined && validCyberLocation(cyberLocation)) {
                     presentation.initialAssessmentId = cyberLocation.assessmentId;
