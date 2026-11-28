@@ -240,6 +240,7 @@ describe('trust pages (#675)', () => {
     test('the pages name the company, not a person, and are in the sitemap', () => {
         const about = read('about.html');
         expect(about).toContain('Legal name: No Fries Limited');
+        expect(about).toContain('NZBN: 9429053883131'); expect(about).toContain('Company number: 9451351');
         expect(about).not.toMatch(/founder|\bJoel\b/i);
         for (const page of ['about.html', 'security.html', 'faq.html']) expect(read('sitemap.xml')).toContain('<loc>https://nofries.nz/' + page + '</loc>');
         expect(read('faq.html')).toContain('NZ$1,250 + GST'); expect(read('pricing.html')).toContain('NZ$1,250 + GST for 90 days');
