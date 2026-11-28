@@ -242,7 +242,16 @@
         const actionWork = action => typeof view.actionWork === 'function' ? view.actionWork(action, itemFollowUps) : action.rationale.suggestedAction;
         let currentOwner = null;
         const actionName = action => typeof view.actionTitle === 'function' ? view.actionTitle(action, controlTitles) : action.controlId + ' · ' + action.labels.kind;
-        const viewOptions = () => ({ actionEditorAbove: true, ...(controlTitles ? { controlTitles } : {}),
+        const rowAssign = actionId => {
+            if (!active() || busy || pending || draft || !editor?.canWrite ||
+                !editor.actions.some(a => a.actionId === actionId && a.commands.includes('assign'))) return;
+            target = null; selectedAction = actionId;
+            if (openDraft('assignNamed')) draftForm?.inputs?.ownerLabel?.focus();
+        };
+        const viewOptions = () => ({ actionEditorAbove: true, assignmentButton(id, name, isMounted) {
+            const item = button('Assign', () => { if (isMounted()) rowAssign(id); }, true);
+            item.setAttribute('aria-label', 'Assign: ' + name); item.hidden = true; return item;
+        }, ...(controlTitles ? { controlTitles } : {}),
             ...(itemFollowUps ? { itemFollowUps } : {}), ...(currentOwner ? { currentOwner } : {}) });
         const readLatest = !initialSource && typeof options.latestSource === 'function' ? options.latestSource : null;
         let latest = null, pageAsOf = null;
@@ -310,16 +319,29 @@
             for (let item = element; item; item = item.parentElement) if (item === toolbar || item === editorPanel) return true;
             return false;
         }
+        const pickerOrders = new Map();
+        function orderedActions() {
+            if (!pickerOrders.has(selected)) pickerOrders.set(selected, new Map());
+            const order = pickerOrders.get(selected);
+            for (const a of model.actions) if (!order.has(a.actionId)) order.set(a.actionId, order.size);
+            return model.actions.slice().sort((a, b) => order.get(a.actionId) - order.get(b.actionId));
+        }
+        function defaultAction() {
+            const actions = orderedActions();
+            return (actions.find(a => a.status !== 'completed' && a.rationale.kind === 'implementation') || actions[0])?.actionId || null;
+        }
         function renderEditor() {
+            if (rendered?.updateAssignments) rendered.updateAssignments(!busy && !pending && !draft && editor?.canWrite ?
+                editor.actions.filter(a => a.commands.includes('assign')).map(a => a.actionId) : []);
             const visible = !denied && (model !== null || draft !== null);
             editorPanel.hidden = !visible;
             if (!visible) return;
             const permitted = editor && editor.canWrite === true;
             actionPickerRow.hidden = !permitted || draft !== null;
             if (permitted && !draft) {
-                if (!editor.actions.some(row => row.actionId === selectedAction)) selectedAction = editor.actions[0]?.actionId || null;
+                if (!editor.actions.some(row => row.actionId === selectedAction)) selectedAction = defaultAction();
                 actionPicker.replaceChildren();
-                model.actions.forEach(action => {
+                orderedActions().forEach(action => {
                     const option = node('option', actionName(action)); option.value = action.actionId; actionPicker.append(option);
                 });
                 actionPicker.value = selectedAction || ''; actionPicker.disabled = busy || !!pending;
@@ -723,7 +745,7 @@
                 const self = editor.ownerChoices.length === 1 ? editor.ownerChoices[0].subjectKey : null;
                 if (self !== currentOwner) { currentOwner = self; if (rendered) rendered.destroy(); rendered = view.mount(content, model, viewOptions()); }
                 if (exactTarget) selectedAction = exactTarget.actionId;
-                else if (!editor.actions.some(action => action.actionId === selectedAction)) selectedAction = editor.actions[0]?.actionId || null;
+                else if (!editor.actions.some(action => action.actionId === selectedAction)) selectedAction = defaultAction();
                 message = exactTarget ? value.planRevision !== exactTarget.planRevision ?
                     'This plan changed since the work queue was checked. The selected action shows the current saved state.' :
                     'Selected action and current options loaded.' : 'Saved plan and current action options loaded.';

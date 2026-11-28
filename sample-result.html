@@ -28,107 +28,54 @@
             <p class="eyebrow">Example result</p>
             <h1>Harbourview Logistics</h1>
             <p class="home-lead">This is what you see after you submit the free cyber security assessment.</p>
-            <p>Harbourview Logistics answered every question in an earlier version of the check. The current check has 16 questions. Each answer is Yes, Partial, No, Unknown or Not applicable. The figures below come from those answers.</p>
+            <p>See what Harbourview reported across the 16 questions in the current free check, which gaps matter most and what the business could do first.</p>
         </header>
         <section aria-labelledby="sample-overall">
             <h2 id="sample-overall">Overall position</h2>
-            <p>Read the two figures together. One shows what the business says it has in place, and the other shows how many questions it could answer with Yes, Partial or No.</p>
+            <p>Questions carry different weights. An unknown answer leaves a range: the lower end assumes it is not in place; the upper end assumes it is fully in place.</p>
             <div class="public-roadmap-grid">
-                <article><h3>Reported implementation</h3><p class="sample-result-figure">60.7%</p><svg class="sample-gauge" viewBox="0 0 200 112" aria-hidden="true" focusable="false"><path d="M20 100 A80 80 0 0 1 180 100" class="sample-gauge-track"></path><path d="M20 100 A80 80 0 0 1 180 100" class="sample-gauge-fill" stroke-dasharray="152.6 300"></path></svg><p>How much of the guidance from New Zealand’s National Cyber Security Centre (NCSC) the answers say is in place. Each Yes counts in full, each Partial counts as half and each No counts as zero, so 6 Yes and 5 Partial out of 14 questions gives 60.7%. It is not a performance score.</p></article>
-                <article><h3>Questions answered</h3><p class="sample-result-figure">100.0%</p><div class="sample-mix"><svg class="sample-donut" viewBox="0 0 100 100" aria-hidden="true" focusable="false"><circle cx="50" cy="50" r="40" class="sample-donut-yes" stroke-dasharray="107.7 251.3" stroke-dashoffset="0.0" transform="rotate(-90 50 50)"></circle><circle cx="50" cy="50" r="40" class="sample-donut-partial" stroke-dasharray="89.8 251.3" stroke-dashoffset="-107.7" transform="rotate(-90 50 50)"></circle><circle cx="50" cy="50" r="40" class="sample-donut-no" stroke-dasharray="53.9 251.3" stroke-dashoffset="-197.5" transform="rotate(-90 50 50)"></circle></svg><ul class="sample-mix-key" aria-hidden="true"><li class="k-yes">Yes</li><li class="k-partial">Partial</li><li class="k-no">No</li></ul></div><p>14 of 14 questions have a yes, partial or no response: 6 yes, 5 partial and 3 no.</p></article>
+                <article><h3>Reported implementation</h3><p class="sample-result-figure">51.1%–57.6%</p><svg class="sample-gauge" viewBox="0 0 200 112" aria-hidden="true" focusable="false"><path d="M20 100 A80 80 0 0 1 180 100" class="sample-gauge-track"></path><path d="M20 100 A80 80 0 0 1 180 100" class="sample-gauge-fill" pathLength="100" stroke-dasharray="51.1 100"></path></svg><p>The gauge shows the lower end of the range. These figures describe reported practice against guidance from New Zealand’s National Cyber Security Centre (NCSC), not independently verified protection.</p></article>
+                <article><h3>Answer mix</h3><p>15 of 16 questions have a resolved answer. The business selected an option for all 16, including “I don’t know”.</p>
+                    <ul><li>Yes, in place and checked: 6</li><li>Partly in place: 4</li><li>Sometimes, but not written down or checked: 1</li><li>No: 3</li><li>I don't know: 1</li><li>Text or email code only: 1</li></ul></article>
             </div>
         </section>
-        <section aria-labelledby="sample-top-gaps">
-            <h2 id="sample-top-gaps">Your top three gaps</h2>
-            <p>Ranked from your saved answers.</p>
-            <details class="sample-rank-note"><summary>How the gaps are ranked</summary><p>Multi-factor authentication, patching, backups and checking payment changes come first, because they help protect against common attacks on small businesses, such as stolen accounts, ransomware and invoice fraud. Within each priority group, we list the checks you don’t have in place before the ones you’ve partly put in place. This is a fixed order, not a risk assessment of your business.</p></details>
+        <section aria-labelledby="sample-top-gaps"><h2 id="sample-top-gaps">Your top five gaps</h2>
+            <details class="sample-rank-note"><summary>How the gaps are ranked</summary><p>The check combines each question’s weight with how far the answer is from fully in place. “I don’t know” also counts as a gap. This order guides planning; it is not an official NCSC priority.</p></details>
             <ol class="public-roadmap-grid sample-result-gaps">
-                <li data-gap-item="NF-NCSC-MCSS-MF-01-Q1"><h3>Multi-factor Authentication</h3><p>Answer: No</p><p><strong>Why it matters:</strong> Reduce account takeover risk by requiring stronger authentication where stolen credentials would cause material harm.</p><p><strong>What to do next:</strong> Require an extra sign-in check, such as an authenticator app or security key, on important accounts. This is multi-factor authentication (MFA).</p></li>
-                <li data-gap-item="NF-NCSC-MCSS-DR-01-Q1"><h3>Data Recovery</h3><p>Answer: No</p><p><strong>Why it matters:</strong> Make recovery dependable by linking backups, supporting information, roles and tests to business recovery needs.</p><p><strong>What to do next:</strong> Keep protected backup copies of important systems and information, and practise getting them back within the time your business needs.</p></li>
-                <li data-gap-item="NF-NCSC-MCSS-LP-01-Q1"><h3>Least Privilege</h3><p>Answer: Partial</p><p><strong>Why it matters:</strong> Limit accidental or malicious change and reduce how far an attacker can move after compromising an account.</p><p><strong>What to do next:</strong> Give people only the access they need for their job, and update or remove it when they start, change roles or leave.</p></li>
+                <li data-gap-item="NF-NCSC-MCSS-DR-01-Q1"><h3>Data Recovery: backups</h3><p>Answer: No</p><p><strong>Why it matters:</strong> If ransomware, theft or a fault wipes your files, a backup the attacker can't reach is how you get the business running again.</p><p><strong>What to do next:</strong> Add one offline copy, or one that cannot be changed or deleted.</p></li>
+                <li data-gap-item="NF-NCSC-MCSS-DR-01-Q2"><h3>Data Recovery: restore tests</h3><p>Answer: Sometimes, but not written down or checked</p><p><strong>Why it matters:</strong> A backup that has never been restored may not work when you need it. Testing shows how long recovery really takes.</p><p><strong>What to do next:</strong> Restore one real file now, and put a fuller test in the diary.</p></li>
+                <li data-gap-item="NF-NCSC-MCSS-PA-01-Q1"><h3>Patching</h3><p>Answer: No</p><p><strong>Why it matters:</strong> Attackers use known flaws in out-of-date software to break in. Updates close those flaws.</p><p><strong>What to do next:</strong> Turn on automatic updates. If you have a website, ask your host or developer to confirm it is patched.</p></li>
+                <li data-gap-item="NF-NCSC-CC-SU-01-Q1"><h3>Limit supplier access</h3><p>Answer: I don't know</p><p><strong>Why it matters:</strong> A supplier's stolen login can become a way into your data. Limits and an extra login step reduce what an attacker can reach.</p><p><strong>What to do next:</strong> List who has access, turn on the extra login step, and add a breach-notice clause.</p></li>
+                <li data-gap-item="NF-NCSC-MCSS-MF-01-Q1"><h3>Multi-factor Authentication: coverage</h3><p>Answer: Partly in place</p><p><strong>Why it matters:</strong> A stolen or guessed password is enough to take over an account unless a second login step stands in the way.</p><p><strong>What to do next:</strong> Turn the extra login step on for these services, then review any exceptions.</p></li>
             </ol>
         </section>
-        <section aria-labelledby="sample-functions">
-            <h2 id="sample-functions">Implementation by NCSC function</h2>
-            <table class="sample-result-table" role="table">
-                <thead role="rowgroup"><tr role="row"><th scope="col" role="columnheader">NCSC function</th><th scope="col" role="columnheader">Reported implementation</th><th scope="col" role="columnheader">Answers</th></tr></thead>
+        <section aria-labelledby="sample-functions"><h2 id="sample-functions">Implementation by NCSC function</h2>
+            <table class="sample-result-table" role="table"><thead role="rowgroup"><tr role="row"><th scope="col" role="columnheader">NCSC function</th><th scope="col" role="columnheader">Reported implementation</th><th scope="col" role="columnheader">Questions</th></tr></thead>
                 <tbody role="rowgroup">
-                    <tr role="row"><th scope="row" role="rowheader">Guide and Govern</th><td role="cell" data-label="Reported implementation">75.0%<svg class="sample-bar" viewBox="0 0 100 8" preserveAspectRatio="none" aria-hidden="true" focusable="false"><rect width="100" height="8" rx="4" class="sample-bar-track"></rect><rect width="75.0" height="8" rx="4" class="sample-bar-fill"></rect></svg></td><td role="cell" data-label="Answers">2</td></tr>
-                    <tr role="row"><th scope="row" role="rowheader">Identify and Understand</th><td role="cell" data-label="Reported implementation">50.0%<svg class="sample-bar" viewBox="0 0 100 8" preserveAspectRatio="none" aria-hidden="true" focusable="false"><rect width="100" height="8" rx="4" class="sample-bar-track"></rect><rect width="50.0" height="8" rx="4" class="sample-bar-fill"></rect></svg></td><td role="cell" data-label="Answers">1</td></tr>
-                    <tr role="row"><th scope="row" role="rowheader">Prevent and Protect</th><td role="cell" data-label="Reported implementation">71.4%<svg class="sample-bar" viewBox="0 0 100 8" preserveAspectRatio="none" aria-hidden="true" focusable="false"><rect width="100" height="8" rx="4" class="sample-bar-track"></rect><rect width="71.4" height="8" rx="4" class="sample-bar-fill"></rect></svg></td><td role="cell" data-label="Answers">7</td></tr>
-                    <tr role="row"><th scope="row" role="rowheader">Detect and Contain</th><td role="cell" data-label="Reported implementation">75.0%<svg class="sample-bar" viewBox="0 0 100 8" preserveAspectRatio="none" aria-hidden="true" focusable="false"><rect width="100" height="8" rx="4" class="sample-bar-track"></rect><rect width="75.0" height="8" rx="4" class="sample-bar-fill"></rect></svg></td><td role="cell" data-label="Answers">2</td></tr>
-                    <tr role="row"><th scope="row" role="rowheader">Respond and Recover</th><td role="cell" data-label="Reported implementation">0.0%<svg class="sample-bar" viewBox="0 0 100 8" preserveAspectRatio="none" aria-hidden="true" focusable="false"><rect width="100" height="8" rx="4" class="sample-bar-track"></rect><rect width="0.0" height="8" rx="4" class="sample-bar-fill"></rect></svg></td><td role="cell" data-label="Answers">2</td></tr>
-                </tbody>
-            </table>
-            <p>The NCSC groups its guidance into five functions. For example, Guide and Govern is about leadership, priorities and everyday guidance that make cyber security part of how a business runs.</p>
+                    <tr role="row"><th scope="row" role="rowheader">Guide and Govern</th><td role="cell" data-label="Reported implementation">83.3%</td><td role="cell" data-label="Questions">2</td></tr>
+                    <tr role="row"><th scope="row" role="rowheader">Identify and Understand</th><td role="cell" data-label="Reported implementation">100.0%</td><td role="cell" data-label="Questions">1</td></tr>
+                    <tr role="row"><th scope="row" role="rowheader">Prevent and Protect</th><td role="cell" data-label="Reported implementation">56.1%–67.2%</td><td role="cell" data-label="Questions">8</td></tr>
+                    <tr role="row"><th scope="row" role="rowheader">Detect and Contain</th><td role="cell" data-label="Reported implementation">75.0%</td><td role="cell" data-label="Questions">2</td></tr>
+                    <tr role="row"><th scope="row" role="rowheader">Respond and Recover</th><td role="cell" data-label="Reported implementation">10.7%</td><td role="cell" data-label="Questions">3</td></tr>
+                </tbody></table>
+            <p>Guide and Govern is about leadership, priorities and everyday guidance.</p>
         </section>
-        <section aria-labelledby="sample-board-summary">
-            <h2 id="sample-board-summary">Example summary for the board or insurer</h2>
-            <p>Harbourview Logistics is fictional. This summary groups the controls by what the business said it had in place.</p>
-            <p><strong>Scope:</strong> Fictional example scope.<br>
-                <strong>Assessed:</strong> 7 September 2026, 9:00 pm NZ time.<br>
-                <strong>Basis:</strong> Self-assessment using the No Fries questionnaire adapted from New Zealand NCSC guidance.</p>
+        <section aria-labelledby="sample-board-summary"><h2 id="sample-board-summary">Example summary for the board or insurer</h2>
+            <p><strong>Scope:</strong> Harbourview Logistics (fictional): office laptops, business email, dispatch and accounts.<br><strong>Assessed:</strong> 24 November 2026, 1 pm NZ time.<br><strong>Basis:</strong> Self-assessment using the No Fries questionnaire adapted from New Zealand NCSC guidance.</p>
             <div class="public-roadmap-grid">
-                <article>
-                    <h3>In place</h3>
-                    <ul>
-                        <li>Security Awareness</li>
-                        <li>Secure Configuration of Software</li>
-                        <li>Patching</li>
-                        <li>Provide and use a password manager</li>
-                        <li>Sensitive-request verification check</li>
-                        <li>Implement network segmentation and separation</li>
-                    </ul>
-                </article>
-                <article>
-                    <h3>Partly in place</h3>
-                    <ul>
-                        <li>Risk Management</li>
-                        <li>Assets and their Importance</li>
-                        <li>Detect Unusual Behaviour</li>
-                        <li>Least Privilege</li>
-                        <li>Implement application control</li>
-                    </ul>
-                </article>
-                <article>
-                    <h3>Not in place yet</h3>
-                    <ul>
-                        <li>Multi-factor Authentication</li>
-                        <li>Data Recovery</li>
-                        <li>Response Planning</li>
-                    </ul>
-                </article>
-            </div>
-            <p><strong>Next steps agreed (owner and date):</strong> Left for the business to complete.</p>
+                <article><h3>In place</h3><ul><li>Security Awareness</li><li>Assets and their Importance</li><li>Detect Unusual Behaviour</li><li>Provide and use a password manager</li><li>Check sensitive requests a second way</li><li>Protect your business email</li></ul></article>
+                <article><h3>Partly in place</h3><ul><li>Risk Management</li><li>Multi-factor Authentication: coverage</li><li>Multi-factor Authentication: method</li><li>Least Privilege</li><li>Data Recovery: restore tests</li><li>Protect and separate your network</li></ul></article>
+                <article><h3>Not in place yet</h3><ul><li>Patching</li><li>Data Recovery: backups</li><li>Response Planning</li></ul></article>
+                <article><h3>Not yet confirmed</h3><ul><li>Limit supplier access</li></ul></article>
+            </div><p><strong>Next steps agreed (owner and date):</strong> Left for the business to complete.</p>
         </section>
-        <section aria-labelledby="sample-questionnaire">
-            <h2 id="sample-questionnaire">Example questionnaire answers</h2>
-            <p>These four suggested answers come from the same fictional Harbourview Logistics assessment. Check the exact coverage before using an answer on an insurer or customer form.</p>
+        <section aria-labelledby="sample-questionnaire"><h2 id="sample-questionnaire">Example questionnaire answers</h2>
+            <p>Four examples from the same fictional answers. Check the coverage before using them on an insurer or customer form.</p>
             <ol class="public-roadmap-grid sample-result-gaps">
-                <li>
-                    <h3>Is multi-factor authentication (MFA) required for business email and remote access?</h3>
-                    <strong>Suggested answer: No</strong>
-                    <p>Harbourview answered No to the multi-factor authentication question.</p>
-                    <p><strong>To answer Yes:</strong> Require MFA for business email and every remote-access route, and check for exceptions.</p>
-                </li>
-                <li>
-                    <h3>Do you keep an offline or immutable backup copy (one that cannot be changed or deleted)?</h3>
-                    <strong>Suggested answer: Not answered</strong>
-                    <p>This assessment does not ask for this detail.</p>
-                    <p><strong>To answer Yes:</strong> Keep a backup copy offline or locked against changes and deletion, and confirm how it is protected.</p>
-                </li>
-                <li>
-                    <h3>Is access limited to job needs, with separate admin accounts and checks when people join, change roles or leave?</h3>
-                    <strong>Suggested answer: Partly</strong>
-                    <p>Harbourview answered Partial to the least privilege question.</p>
-                    <p><strong>To answer Yes:</strong> Limit access to job needs, separate admin accounts, and regularly review access and staff changes.</p>
-                </li>
-                <li>
-                    <h3 id="sample-payment-checks">Are payment and bank-detail changes checked through a trusted route separate from the original request?</h3>
-                    <strong>Suggested answer: Yes</strong>
-                    <p>In this fictional example, Harbourview answered Yes to the sensitive-request verification question.</p>
-                    <p><strong>To answer Yes:</strong> Check payment and bank-detail changes using a known phone number or another trusted, separate route.</p>
-                </li>
+                <li><h3>Is an extra login step (MFA) required for email, remote access, admin accounts, finance tools and other important online services?</h3><strong>Suggested answer: Partly</strong><p>Your saved answer: Partly in place.</p><p>To answer Yes: Turn the extra login step on for these services, then review any exceptions.</p></li>
+                <li><h3>Are your important files and systems backed up automatically, with at least three copies on two kinds of storage, including one copy offsite and one copy offline or otherwise out of reach of ransomware?</h3><strong>Suggested answer: No</strong><p>Your saved answer: No.</p><p>To answer Yes: Add one offline copy, or one that cannot be changed or deleted.</p></li>
+                <li><h3>Do people only get the access they need for their job, with a separate admin login from everyday email, and do you remove or review access when someone joins, changes role or leaves?</h3><strong>Suggested answer: Partly</strong><p>Your saved answer: Partly in place.</p><p>To answer Yes: Separate admin logins from everyday ones, and check access every three months, including people who have left.</p></li>
+                <li><h3 id="sample-payment-checks">If someone asks you to change bank or invoice details, reset a password or change a sensitive login, do you check the request by a second method, such as a call to a known number, rather than replying to the same message?</h3><strong>Suggested answer: Yes</strong><p>Your saved answer: Yes, in place and checked.</p><p>To answer Yes: Require a check by a second method, and never approve from the original message alone.</p></li>
             </ol>
         </section>
         <section class="sample-result-next" aria-labelledby="sample-start">

@@ -253,6 +253,25 @@ test('keyboard-compatible navigation updates title, route and current-link seman
     assert.equal(dom.document.title, 'Cyber Security · No Fries Dashboard');
 });
 
+test('consultants see the mounted client in the breadcrumb and tab, and no client survives unmount', () => {
+    for (const name of ['Kauri Joinery Test', 'Harbour Test']) {
+        const dom = mount(view({ name }), { onOpenOrganisations() {} });
+        for (const [route, label] of [['overview', 'Overview'], ['cyber-security', 'Cyber Security'],
+            ['improvement-plan', 'Improvement Plan']]) {
+            dom.controller.navigate(route);
+            assert.equal(dom.root.querySelector('.dashboard-page-heading').querySelector('.dashboard-eyebrow').textContent,
+                name + ' / ' + label);
+            assert.equal(dom.document.title, name + ' · ' + label + ' · No Fries');
+        }
+        dom.controller.destroy();
+        assert.equal(dom.document.title, '');
+    }
+    const company = mount(view({ name: 'Company Test' }));
+    assert.equal(company.root.querySelector('.dashboard-page-heading').querySelector('.dashboard-eyebrow').textContent,
+        'Your organisation / Overview');
+    assert.equal(company.document.title, 'Overview · No Fries Dashboard');
+});
+
 test('a host skip link is not repeated inside the dashboard', () => {
     const dom = mount(view(), { omitSkipLink: true });
     assert.equal(dom.root.querySelector('.dashboard-skip'), null);

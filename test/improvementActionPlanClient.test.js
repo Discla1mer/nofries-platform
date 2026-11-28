@@ -1343,3 +1343,19 @@ describe('scoring v2 (#399): plan wording from the plan\'s own profile', () => {
         expect(h.root.querySelectorAll('article')[0].querySelector('h3').textContent).toContain('Control to review');
     });
 });
+
+test('#691: an action row opens its own assignment and the default is an open implementation gap', async () => {
+    const h = harness(); await h.controller.ready;
+    const rows = presentation(h.state.plans.get('plan-a')).actions;
+    const picker = h.root.querySelectorAll('select').find(n => n.getAttribute('aria-label') === 'Improvement action');
+    expect(rows.find(a => a.actionId === picker.value).rationale.kind).toBe('implementation');
+    const before = picker.children.map(option => option.value);
+    const index = rows.findIndex(a => a.actionId !== picker.value);
+    const row = h.root.querySelectorAll('article')[index], assign = row.querySelector('button');
+    expect(assign.disabled).toBe(false); assign.click();
+    expect(form(h)).toBeDefined(); expect(h.request.mock.calls.some(([, body]) => body)).toBe(false);
+    fill(h, 'Owner name', 'Test owner'); fill(h, 'Due date', '2026-10-06'); await submitForm(h);
+    expect(h.request.mock.calls.find(([path, body]) => path.endsWith('/execute') && body)?.[1].actionId).toBe(rows[index].actionId);
+    expect(picker.value).toBe(rows[index].actionId);
+    expect(picker.children.map(option => option.value)).toEqual(before);
+});

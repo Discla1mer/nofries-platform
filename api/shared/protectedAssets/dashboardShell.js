@@ -174,6 +174,8 @@
         const contactSend = typeof options.contactRequest === 'function' && model.audience !== 'Scoped advisor' ? options.contactRequest : null;
         const gated = content => options.representativeDetails
             ? detailsGate(doc, options.representativeDetails, content) : content();
+        // The host offers portfolio navigation only for a witnessed consultant workspace.
+        const clientName = typeof options.onOpenOrganisations === 'function' ? model.context.displayName : null;
         const first = available.find(function (item) { return item.key === 'overview'; }) || available[0];
         let current = first;
         let disposed = false;
@@ -375,7 +377,8 @@
             }
             const repeatedRoute = current.key === target.key && win && win.location.hash === '#' + target.route;
             current = target;
-            if (doc && current && current.label) doc.title = current.label + ' · No Fries Dashboard';
+            if (doc && current && current.label) doc.title = clientName
+                ? clientName + ' · ' + current.label + ' · No Fries' : current.label + ' · No Fries Dashboard';
             status.hidden = !!requested || !route;
             // #685: Evidence exists but is not switched on for this account, so say that
             // instead of the generic not-found line. Other routes keep the generic line.
@@ -438,7 +441,7 @@
             main.replaceChildren();
             const head = element('header', 'dashboard-page-heading');
             const title = element('h1', '', current.label); title.tabIndex = -1;
-            head.append(element('p', 'dashboard-eyebrow', 'Your organisation / ' + current.label), title);
+            head.append(element('p', 'dashboard-eyebrow', (clientName || 'Your organisation') + ' / ' + current.label), title);
             if (current === settingsRoute) {
                 head.classList.add('dashboard-settings-heading');
                 const illustration = element('img', 'dashboard-settings-illustration');
