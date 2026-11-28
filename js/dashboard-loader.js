@@ -1686,6 +1686,7 @@
                 detailsGate: presentation && presentation.detailsGate,
                 boardExportGate: questionnaireExportGateAvailable && presentation ? presentation.detailsGate : undefined,
                 presentationMode: value.presentationMode, organisationId: organisationId,
+                displayName: presentation && presentation.displayName,
                 initialAssessmentId: presentation && presentation.initialAssessmentId,
                 initialQuestionIndex: presentation && presentation.initialQuestionIndex,
                 onLocation: presentation && presentation.onLocation, onFunnelStep: funnelStep,
