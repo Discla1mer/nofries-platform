@@ -23,7 +23,7 @@
         <article class="public-panel" id="main-content" tabindex="-1">
             <p class="eyebrow">Privacy notice</p>
             <h1>How No Fries handles information</h1>
-            <p>Last updated: 19 November 2026. No Fries Limited, Auckland, New Zealand, provides the No Fries dashboard and the public website at nofries.nz. This notice says what personal information we collect, why, and how you can ask to see it, correct it or complain.</p>
+            <p>Last updated: 28 November 2026. No Fries Limited, Auckland, New Zealand, provides the No Fries dashboard and the public website at nofries.nz. This notice says what personal information we collect, why, and how you can ask to see it, correct it or complain.</p>
 
             <section class="terms-glance" id="glance" aria-labelledby="glance-title">
                 <h2 id="glance-title">At a glance</h2>
@@ -31,7 +31,7 @@
                     <li><strong>Who we are:</strong> No Fries Limited is the agency that collects and holds this information. Email <a href="mailto:hello@nofries.nz">hello@nofries.nz</a>.</li>
                     <li><strong>What we collect:</strong> your name, role and email; your organisation’s name and business address; any NZBN you choose to give; assessment scope and answers; names you enter as action owners in your improvement plan; terms acceptance; and limited security records.</li>
                     <li><strong>Why:</strong> to create and secure your account, record your organisation’s agreement, save and calculate your assessment, and send service emails about your account. We do not sell it, use it for marketing without asking, or use it to train AI. The manual assessment does not use AI.</li>
-                    <li><strong>Where it is stored:</strong> the dashboard and its assessment database run in Microsoft Azure New Zealand North. Sign-in sessions, signup invitations, agreement archives and related access-control records are in private Azure Storage in Australia East. Microsoft Entra ID handles sign-in and sends your verification code.</li>
+                    <li><strong>Where it is stored:</strong> your assessment data is stored in New Zealand. The dashboard, its assessment database, sign-in sessions, signup invitations, agreement archives and related access-control records are in Microsoft Azure New Zealand North. Microsoft Entra External ID handles sign-in, keeps your sign-in identity (including your email address) in Australia, and sends your verification code.</li>
                     <li><strong>Who we share it with:</strong> people your organisation authorises, No Fries staff who need it to run the service, and our service providers (Microsoft, and Resend for email, including service emails).</li>
                     <li><strong>How long we keep it:</strong> while your account is active and as set out in your agreement. Your access ending does not delete your saved work. You can ask us to delete it. See <a href="#retention">How long we keep information</a>.</li>
                     <li><strong>Access, correction and complaints:</strong> under the <a href="https://www.legislation.govt.nz/act/public/2020/0031/latest/LMS23223.html">Privacy Act 2020</a> you can ask to see and correct personal information we hold about you. If you are not satisfied, you can complain to the <a href="https://www.privacy.org.nz/">Office of the Privacy Commissioner</a> (privacy.org.nz). If a privacy breach is likely to cause serious harm, we notify affected people and the Commissioner. See <a href="#requests">Access, correction and complaints</a>.</li>
@@ -82,7 +82,7 @@
                     <li><strong>Retention.</strong> We do not keep personal information for longer than we need for a lawful purpose. See <a href="#retention">How long we keep information</a>.</li>
                     <li><strong>Use.</strong> We use it for the purposes in this notice. We do not sell it, use it for marketing without asking, or use it to train a general-purpose AI model. A new purpose needs a lawful basis and, where the Act requires it, notice.</li>
                     <li><strong>Disclosure.</strong> We share it as described in <a href="#sharing">Who we share it with</a>, or when the Act otherwise allows.</li>
-                    <li><strong>Overseas disclosure (principle 12).</strong> Some storage is outside New Zealand, in Australia East. Some service providers may process information in other countries. See <a href="#sharing">Who we share it with</a>.</li>
+                    <li><strong>Overseas disclosure (principle 12).</strong> Microsoft Entra External ID keeps your sign-in identity in Australia. Copies of storage records made before 28 November 2026 stay in Azure Australia East until 5 December 2026 and are then deleted. Some service providers may process information in other countries. See <a href="#sharing">Who we share it with</a>.</li>
                     <li><strong>Unique identifiers.</strong> We may keep our own account identifier so we can tell your organisation’s records apart. We do not use a government identifier as your No Fries account number. The setup form asks for an NZBN only if you have one, and we store that company registration number only if you choose to give it. A business-looking email domain is not proof of organisation ownership.</li>
                 </ol>
                 <p>Principle 3A, from the amendment in force on 1 May 2026, can require us to tell a person when we collect their information from someone else. See <a href="#indirect-collection">Information about other people</a>.</p>
@@ -154,11 +154,11 @@
 
             <section id="storage">
                 <h2>Where information is stored</h2>
-                <p>The customer dashboard application and its PostgreSQL assessment database are hosted in Microsoft Azure New Zealand North. Dashboard authentication sessions, signup invitations, agreement archives and related access-control records use private Azure Storage in Australia East. Microsoft Entra ID provides identity authentication. Data is encrypted in transit using HTTPS and encrypted at rest by the applicable Azure service. The public website files do not contain a tenant service catalogue or customer records.</p>
+                <p>The customer dashboard application and its PostgreSQL assessment database are hosted in Microsoft Azure New Zealand North. Dashboard authentication sessions, signup invitations, agreement archives and related access-control records use private Azure Storage, also in New Zealand North. Microsoft Entra External ID provides identity authentication and keeps sign-in identities in Australia. Copies of storage records made before 28 November 2026 stay in Azure Australia East until 5 December 2026 and are then deleted. Data is encrypted in transit using HTTPS and encrypted at rest by the applicable Azure service. The public website files do not contain a tenant service catalogue or customer records.</p>
                 <p>Microsoft sign-in is necessary but not sufficient. Each request is limited to an approved organisation (tenant) and role. The browser cannot select a different organisation’s records; No Fries selects that store on the server. People your organisation authorises can see what their role allows.</p>
                 <p>Cookies for the assistant, account setup and managed IT scope access are limited to this site, sent only over an encrypted connection, and cannot be read by website scripts. Their expiry does not delete the server-side records described in this notice.</p>
                 <p>The dashboard remembers the last organisation you opened in this browser, so it can reopen it next time. Signing out, signing in with another account or your sign-in expiring clears it.</p>
-                <p>Australia East is outside New Zealand. This notice does not claim a region it does not state.</p>
+                <p>Australia is outside New Zealand. This notice does not claim a region it does not state.</p>
             </section>
 
             <section id="sharing">
