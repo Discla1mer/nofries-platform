@@ -321,3 +321,21 @@ input, select, textarea { background: #fff; }
     #accountListResults td.account-plan { white-space: normal; }
     #accountListResults .account-actions { min-width: 0; }
 }
+
+/* Several accounts at once: filter, select and one typed confirmation. */
+.account-bulk { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin: 4px 0 14px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+.account-bulk[hidden] { display: none; }
+.account-bulk label { font-weight: 700; }
+.account-bulk input[type="search"] { flex: 1 1 14rem; min-height: 44px; min-width: 0; padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; font: inherit; }
+.account-bulk .account-bulk-all { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; }
+.account-bulk input[type="checkbox"], #accountListResults td.account-select input { width: 22px; height: 22px; accent-color: var(--teal-dark); }
+.account-bulk [role="status"] { color: var(--muted); }
+.account-bulk button { min-height: 44px; padding: 8px 16px; border: 1px solid var(--teal-dark); border-radius: 8px; background: var(--panel); color: var(--teal-dark); font: inherit; font-weight: 700; cursor: pointer; }
+.account-bulk button.danger { border-color: var(--red); background: var(--red); color: white; }
+.account-bulk button:disabled { opacity: .5; cursor: not-allowed; }
+#accountListResults tr[hidden] { display: none !important; }
+.account-confirm label { display: block; margin: 0 0 16px; font-weight: 700; }
+.account-confirm label[hidden] { display: none; }
+.account-confirm label input { display: block; width: 100%; min-height: 44px; margin-top: 6px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; font: inherit; text-transform: uppercase; }
+.account-confirm button:disabled { opacity: .5; cursor: not-allowed; }
+.account-confirm label select { display: block; width: 100%; min-height: 44px; margin-top: 6px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; font: inherit; }

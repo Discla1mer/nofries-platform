@@ -5,16 +5,19 @@
     // bound to this staff session, single use), then apply. Loaded only when
     // NOFRIES_DASHBOARD_ADMIN_ACCOUNT_WIPE is on.
     const panel = document.getElementById('accountWipePanel'), form = document.getElementById('accountWipeForm');
-    if (!panel || !form || document.body.dataset.page !== 'operator') return;
+    if (!panel || !form || !document.getElementById('accountWipeReason') || document.body.dataset.page !== 'operator') return;
     const $ = id => document.getElementById('accountWipe' + id);
     const resetButton = $('Reset'), deleteButton = $('Delete'), typed = $('Email'), word = $('Word'), hint = $('WordHint');
-    const approve = $('Approve'), apply = $('Apply'), status = $('Status'), summary = $('Summary');
+    const approve = $('Approve'), apply = $('Apply'), status = $('Status'), summary = $('Summary'), reason = $('Reason');
     // Reset or delete by email, for accounts lookup cannot offer for selection
     // (a delete that stopped after storage leaves no rows; a row past the scan
     // cap has no selector). The server resolves the account by email itself,
     // and for a partial delete acts only on the reference it kept.
     const resumeEmail = $('ResumeEmail'), resume = $('Resume');
     const WORDS = { reset: 'RESET', delete: 'DELETE' };
+    // Every reset or delete records one fixed reason code (never free text).
+    const REASONS = { test_account: 'Test account', customer_request: 'The customer asked', retention_rule: 'Published retention rule' };
+    const reasonOk = value => typeof value === 'string' && Object.hasOwn(REASONS, value);
     const STAGES = { database: 'Database', storage: 'Stored records', identity: 'Sign-in user' };
     const STATES = { done: 'removed', absent: 'already gone', failed: 'failed', pending: 'not started', unknown: 'result not known', not_applicable: 'not an External ID account (not removed)', none_recorded: 'none recorded (signup never finished)' };
     const MESSAGES = {
@@ -67,13 +70,13 @@
         resetButton.disabled = deleteButton.disabled = !idle;
         resume.disabled = resumeEmail.disabled = busy;
         resetButton.setAttribute('aria-pressed', String(action === 'reset')); deleteButton.setAttribute('aria-pressed', String(action === 'delete'));
-        typed.disabled = word.disabled = !idle || !action; approve.disabled = !idle || !action; apply.disabled = busy || !approved;
+        typed.disabled = word.disabled = reason.disabled = !idle || !action; approve.disabled = !idle || !action; apply.disabled = busy || !approved;
         approve.textContent = action ? 'Approve ' + action : 'Approve';
         hint.textContent = action ? WORDS[action] : 'RESET or DELETE';
     }
     function choose(next) {
         if (busy || !selected) return;
-        generation++; clear(); action = next; typed.value = ''; word.value = ''; status.textContent = '';
+        generation++; clear(); action = next; typed.value = ''; word.value = ''; reason.value = ''; status.textContent = '';
         summary.textContent = selected.byEmail && next === 'delete'
             ? 'Delete ' + selected.email + ': removes the account, its email and all its data, then its External ID sign-in user. This cannot be undone. If an earlier delete stopped partway, steps already done are skipped and the server uses only what it kept from that attempt.'
             : next === 'reset'
@@ -97,8 +100,9 @@
     // dialog naming the action and the email, so the client supplies the same
     // confirmation the server checks, then uses the single-use approval at once.
     // The server still binds the approval to this staff session and this target.
-    async function perform(chosen, email, store) {
+    async function perform(chosen, email, store, why) {
         if (!enabled || !WORDS[chosen] || typeof email !== 'string' || !email) return { done: false, text: 'Reset and delete are unavailable.' };
+        if (!reasonOk(why)) return { done: false, text: 'Choose a reason before resetting or deleting. Nothing was changed.' };
         // The list row's store names the account when an email is in both stores.
         const where = store === 'legacy' || store === 'external' ? { store } : {};
         // Leaving the page (or the wipe turning off) aborts every row operation,
@@ -108,7 +112,7 @@
         inflight.add(active);
         try {
             await ready(active.signal);
-            const approval = await request(LOOKUP, { wipe: { step: 'approve', action: chosen, email, confirmEmail: email, confirmWord: WORDS[chosen], ...where } }, active.signal);
+            const approval = await request(LOOKUP, { wipe: { step: 'approve', action: chosen, email, confirmEmail: email, confirmWord: WORDS[chosen], reason: why, ...where } }, active.signal);
             if (approval.status !== 200) return { done: false, text: explain(approval.value && approval.value.code) };
             if (approval.value.action !== chosen || typeof approval.value.approvalId !== 'string') throw new Error();
             if (active.signal.aborted || !enabled) return { done: false, text: 'Stopped before anything was applied.' };
@@ -129,6 +133,7 @@
     async function run(execute) {
         if (busy || !selected || !action) return;
         if (!execute && !form.reportValidity()) return;
+        if (!execute && !reasonOk(reason.value)) { status.textContent = 'Choose a reason before approving.'; return; }
         const prior = approved, target = selected, chosen = action, cycle = ++generation;
         if (execute && (!prior || Date.parse(prior.approvalExpiresAt) <= Date.now())) { clear(); status.textContent = 'Approval expired. Approve again.'; return; }
         clear(); busy = true; controls(); controller = new AbortController();
@@ -138,13 +143,13 @@
             if (!execute) await ready(active.signal);
             if (cycle !== generation) return;
             const body = execute ? { wipe: { step: 'execute', approvalId: prior.approvalId, email: target.email } }
-                : { wipe: { step: 'approve', action: chosen, email: target.email, confirmEmail: typed.value, confirmWord: word.value } };
+                : { wipe: { step: 'approve', action: chosen, email: target.email, confirmEmail: typed.value, confirmWord: word.value, reason: reason.value } };
             const result = await request(LOOKUP, body, active.signal);
             if (cycle !== generation) return;
             if (result.status !== 200) { status.textContent = explain(result.value && result.value.code); return; }
             if (execute) {
                 status.textContent = outcomeText(result.value, target.email);
-                if (!['partial', 'timed_out_rolled_back', 'unknown'].includes(result.value.outcome)) { action = null; typed.value = ''; word.value = ''; }
+                if (!['partial', 'timed_out_rolled_back', 'unknown'].includes(result.value.outcome)) { action = null; typed.value = ''; word.value = ''; reason.value = ''; }
             } else {
                 if (result.value.action !== chosen || !(Date.parse(result.value.approvalExpiresAt) > Date.now())) throw new Error();
                 approved = result.value;
@@ -161,7 +166,7 @@
         }
     }
     function selection() {
-        generation++; controller?.abort(); clear(); busy = false; action = null; typed.value = ''; word.value = '';
+        generation++; controller?.abort(); clear(); busy = false; action = null; typed.value = ''; word.value = ''; reason.value = '';
         selected = window.nofriesAccountSelection && window.nofriesAccountSelection.email ? window.nofriesAccountSelection : null;
         summary.textContent = selected ? 'Selected ' + selected.email + '. Choose Reset or Delete.' : 'Select an account from lookup first.';
         status.textContent = ''; controls();
@@ -170,7 +175,7 @@
         const value = String(resumeEmail.value || '').trim();
         if (busy) return;
         if (value.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) { status.textContent = 'Enter the account email to reset or delete.'; return; }
-        generation++; controller?.abort(); clear(); busy = false; action = null; typed.value = ''; word.value = '';
+        generation++; controller?.abort(); clear(); busy = false; action = null; typed.value = ''; word.value = ''; reason.value = '';
         selected = { email: value, byEmail: true };
         summary.textContent = 'Selected ' + value + ' by email. Choose Reset or Delete.'; status.textContent = ''; controls();
     });
@@ -197,7 +202,7 @@
         if (!on) { inflight.forEach(function (item) { item.abort(); }); inflight.clear(); }
         if (typeof window.CustomEvent === 'function') window.dispatchEvent(new window.CustomEvent('nofries-account-wipe', { detail: { available: on } }));
     }
-    window.nofriesAccountWipe = Object.freeze({ perform, available: () => enabled });
+    window.nofriesAccountWipe = Object.freeze({ perform, reasons: Object.freeze({ ...REASONS }), available: () => enabled });
     selection();
     available(true);
 }());

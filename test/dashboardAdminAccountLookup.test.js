@@ -237,3 +237,69 @@ test.each([undefined, 'false', 'true'])('selected-account selectors require the 
     const response = await h.handler.handle(wire(), 'accounts/lookup'); expect(response.status).toBe(200);
     expect(response.body.rows[0].selector).toEqual(flag === 'true' ? { provider: 'legacy', subjectKey: subject, tenantId: uid(3), organisationId: uid(4) } : undefined);
 });
+
+describe('separate request budgets for reads and for reset/delete calls', () => {
+    function budgeted() {
+        let clock = now;
+        const audit = jest.fn(), read = jest.fn(async () => ({ rows: [], truncated: false }));
+        const wipe = jest.fn(async () => ({ status: 200, body: { ok: true } }));
+        const reads = jest.fn(readJson);
+        const handle = createAccountLookup({ read, wipe, readJson: reads, env, audit, targetDigest, now: () => clock });
+        const run = input => handle(wire(input), 'accounts/lookup', async () => identity, signal());
+        const raw = text => handle(Object.assign(Readable.from([Buffer.from(text)]), { method: 'POST', url: '/api/dashboard-admin/accounts/lookup',
+            headers: { 'content-type': 'application/json', origin, 'sec-fetch-site': 'same-origin' } }), 'accounts/lookup', async () => identity, signal());
+        const wipeBody = { wipe: { step: 'execute', approvalId: uid(9), email } };
+        return { run, raw, read, wipe, audit, reads, wipeBody, tick: ms => { clock += ms; } };
+    }
+
+    test('60 reset/delete calls a minute are allowed and the 61st gets 429; lookups keep their own 10', async () => {
+        const b = budgeted();
+        for (let i = 0; i < 10; i++) expect((await b.run({ email })).status).toBe(200);
+        for (let i = 0; i < 60; i++) expect((await b.run(b.wipeBody)).status).toBe(200);
+        const over = await b.run(b.wipeBody);
+        expect(over.status).toBe(429); expect(over.headers['Retry-After']).toBe('60');
+        expect(b.wipe).toHaveBeenCalledTimes(60);
+        expect((await b.run({ email })).status).toBe(429);
+        expect(b.read).toHaveBeenCalledTimes(10);
+    });
+
+    test('reset/delete calls do not use up the lookup budget, and lookups do not use up the wipe budget', async () => {
+        const b = budgeted();
+        for (let i = 0; i < 50; i++) expect((await b.run(b.wipeBody)).status).toBe(200);
+        for (let i = 0; i < 10; i++) expect((await b.run({ email })).status).toBe(200);
+        expect((await b.run({ email })).status).toBe(429);
+        expect((await b.run({})).status).toBe(429);
+        for (let i = 0; i < 10; i++) expect((await b.run(b.wipeBody)).status).toBe(200);
+        expect((await b.run(b.wipeBody)).status).toBe(429);
+        // Wipe calls write their own records, never a lookup record.
+        expect(b.audit.mock.calls.every(([event]) => event.category === 'dashboard_admin_account_lookup')).toBe(true);
+        expect(b.audit.mock.calls.filter(([event]) => event.status === 200)).toHaveLength(10);
+    });
+
+    test('once both budgets are used up no body is read, and a new minute restores both', async () => {
+        const b = budgeted();
+        for (let i = 0; i < 10; i++) await b.run({ email });
+        for (let i = 0; i < 60; i++) await b.run(b.wipeBody);
+        const readsBefore = b.reads.mock.calls.length;
+        expect((await b.run(b.wipeBody)).status).toBe(429);
+        expect((await b.run({ email })).status).toBe(429);
+        expect(b.reads).toHaveBeenCalledTimes(readsBefore);
+        b.tick(60000);
+        expect((await b.run(b.wipeBody)).status).toBe(200);
+        expect((await b.run({ email })).status).toBe(200);
+    });
+
+    test('no more than 140 bodies are read in a minute, whatever their shape', async () => {
+        const b = budgeted();
+        for (let i = 0; i < 200; i++) await b.run({ email });
+        expect(b.reads).toHaveBeenCalledTimes(140);
+        expect(b.read).toHaveBeenCalledTimes(10);
+    });
+
+    test('a body that cannot be read counts against the lookup budget', async () => {
+        const b = budgeted();
+        for (let i = 0; i < 10; i++) expect((await b.raw('{not json')).status).toBe(503);
+        expect((await b.run({ email })).status).toBe(429);
+        expect((await b.run(b.wipeBody)).status).toBe(200);
+    });
+});

@@ -1,5 +1,5 @@
 'use strict';
-const { createAccountWipeExecutor, APPROVAL_MS, OUTCOME_RESERVE_MS, OUTCOME_MIN_MS } = require('../api/shared/dashboardAdmin/accountWipeExecutor');
+const { createAccountWipeExecutor, APPROVAL_MS, OUTCOME_RESERVE_MS, OUTCOME_MIN_MS, REASONS } = require('../api/shared/dashboardAdmin/accountWipeExecutor');
 const { readAccountWipeGraphSettings, createAccountWipeGraphToken, EXCHANGE_SCOPE, GRAPH_SCOPE } = require('../api/shared/dashboardAdmin/accountWipeGraphToken');
 
 const uid = n => '70000000-0000-4000-8000-' + String(n).padStart(12, '0');
@@ -38,7 +38,7 @@ function harness({ kind = 'external_starter', found = inventory(), identity = tr
     return { executor, storage, repository, remover, calls, records, tick: ms => { clock += ms; }, set: value => { current = value; } };
 }
 const approval = (action, extra = {}) => ({ actor: ACTOR, sessionSha256: SESSION, action, email: ' Synthetic.Owner@Example.test ',
-    confirmEmail: EMAIL, confirmWord: action.toUpperCase(), ...extra });
+    confirmEmail: EMAIL, confirmWord: action.toUpperCase(), reason: 'customer_request', ...extra });
 const apply = (approvalId, extra = {}) => ({ actor: ACTOR, sessionSha256: SESSION, approvalId, email: EMAIL, ...extra });
 const order = calls => calls.map(([name]) => name).filter(name => !['role', 'inventory'].includes(name));
 
@@ -658,4 +658,27 @@ test('with an email in both stores, deleting the legacy account keeps the extern
     expect(await run('legacy')).toMatchObject({ outcome: 'succeeded', stages: { identity: 'not_applicable' } });
     expect(await run('external')).toMatchObject({ outcome: 'succeeded', stages: { database: 'absent', storage: 'absent', identity: 'done' } });
     expect(remover.remove).toHaveBeenLastCalledWith(SUBJECT, expect.any(Object));
+});
+
+describe('recorded reason', () => {
+    test('the fixed codes are the only reasons', () => {
+        expect(REASONS).toEqual(['test_account', 'customer_request', 'retention_rule']);
+        expect(Object.isFrozen(REASONS)).toBe(true);
+    });
+
+    test('the approval record carries the reason code; attempt and outcome are unchanged', async () => {
+        const h = harness();
+        const { approvalId } = await h.executor.approve(approval('reset', { reason: 'retention_rule' }), signal());
+        await h.executor.execute(apply(approvalId), signal());
+        expect(h.records[0]).toMatchObject({ phase: 'approval', action: 'reset', reason: 'retention_rule', outcome: 'approved' });
+        expect(h.records.map(r => r.phase)).toEqual(['approval', 'attempt', 'outcome']);
+    });
+
+    test.each([[undefined], [null], [''], ['other'], ['Test account'], ['customer asked by phone'], [1]])('reason %p is refused before anything is read, and the refusal is recorded', async reason => {
+        const h = harness();
+        await expect(h.executor.approve(approval('delete', { reason }), signal())).rejects.toMatchObject({ code: 'account_wipe_input_invalid' });
+        expect(h.storage.inventory).not.toHaveBeenCalled(); expect(h.calls).toEqual([]);
+        expect(h.records).toEqual([expect.objectContaining({ phase: 'approval_refused', code: 'account_wipe_input_invalid', outcome: 'refused', targetSha256: DIGEST })]);
+        expect(Object.hasOwn(h.records[0], 'reason')).toBe(false);
+    });
 });

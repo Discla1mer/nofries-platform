@@ -313,7 +313,7 @@ for (const useExample of [false, true]) {
                 '/service-desk': '/support', '/mssp': '/scoping', '/workspace': '/scoping',
                 '/app': '/scoping', '/app/*': '/scoping', '/legacy-cyber-check': '/scoping',
                 '/free-check': '/scoping', '/sample-report.html': '/', '/share/*': '/',
-                '/founder': '/scoping', '/founder.html': '/scoping', '/about.html': '/', '/About.html': '/'
+                '/founder': '/scoping', '/founder.html': '/scoping'
             })) {
                 const route = config.routes.find(rule => rule.route === alias);
                 assert.equal(route?.redirect, target, alias + ' must retain its redirect destination');

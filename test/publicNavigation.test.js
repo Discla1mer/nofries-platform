@@ -10,9 +10,9 @@ const hrefs = html => [...html.matchAll(/<a\b[^>]*href="([^"]+)"/g)].map(match =
 const labels = html => [...html.matchAll(/<a\b[^>]*>([\s\S]*?)<\/a>/g)].map(match => match[1].replace(/<[^>]*>/g, '').trim());
 const MAIN = ['/', '/pricing.html', '/managed-it.html', '/roadmap.html', '/contact.html', '/login?intent=login'];
 const MAIN_LABELS = ['Home', 'Pricing', 'Managed IT', 'Roadmap', 'Contact', 'Log in'];
-const FOOTER = ['/', '/pricing.html', '/managed-it.html', '/roadmap.html', '/contact.html', '/privacy.html', '/terms.html'];
-const FOOTER_LABELS = ['Home', 'Pricing', 'Managed IT', 'Roadmap', 'Contact', 'Privacy', 'Terms'];
-const PAGES = ['index.html', 'changelog.html', 'roadmap.html', 'pricing.html', 'sample-result.html', 'managed-it.html', 'contact.html', 'privacy.html', 'terms.html', 'pilot-terms.html', '404.html', 'error.html', 'account-help.html', 'insurance.html', 'supplier-questionnaire.html', 'board.html', 'consultants.html', 'offer.html', 'invoice-scams.html'];
+const FOOTER = ['/', '/pricing.html', '/managed-it.html', '/roadmap.html', '/contact.html', '/about.html', '/security.html', '/faq.html', '/privacy.html', '/terms.html'];
+const FOOTER_LABELS = ['Home', 'Pricing', 'Managed IT', 'Roadmap', 'Contact', 'About', 'Security', 'FAQ', 'Privacy', 'Terms'];
+const PAGES = ['index.html', 'changelog.html', 'roadmap.html', 'pricing.html', 'sample-result.html', 'managed-it.html', 'contact.html', 'privacy.html', 'terms.html', 'pilot-terms.html', '404.html', 'error.html', 'account-help.html', 'insurance.html', 'supplier-questionnaire.html', 'board.html', 'consultants.html', 'offer.html', 'about.html', 'security.html', 'faq.html', 'invoice-scams.html'];
 
 test.each(PAGES)('%s uses the shared main and footer links', name => {
     const html = read(name);

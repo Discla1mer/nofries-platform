@@ -239,6 +239,35 @@ describe('consultants page (#674)', () => {
     });
 });
 
+describe('trust pages (#675)', () => {
+    const fs = require('fs'), path = require('path');
+    const read = name => fs.readFileSync(path.join(__dirname, '..', name), 'utf8');
+    test.each([['/about', 'About No Fries'], ['/about.html', 'About No Fries'], ['/security', 'How No Fries protects your information'],
+        ['/security.html', 'How No Fries protects your information'], ['/faq', 'Common questions'], ['/faq.html', 'Common questions']])('%s is a real page', async (route, heading) => {
+        const page = await request(app).get(route);
+        expect(page.status).toBe(200); expect(page.text).toContain('<h1>' + heading + '</h1>');
+    });
+    test('the security page states only what the privacy notice and the server support', () => {
+        const security = read('security.html'), privacy = read('privacy.html');
+        for (const fact of ['Microsoft Azure New Zealand North', 'Microsoft Entra External ID', 'encrypted in transit using HTTPS']) {
+            expect(security).toContain(fact); expect(privacy).toContain(fact);
+        }
+        // Session length matches the server limit.
+        expect(security).toContain('You stay signed in for up to 4 hours.');
+        expect(read('api/shared/browserAuth.js')).toContain('const SESSION_ABSOLUTE_TTL_MS = 4 * 60 * 60 * 1000;');
+        expect(security).toContain('does not hold a security certification');
+        expect(security).not.toMatch(/\bcertified\b|\bcompliant\b|guarantee|bank-grade|military-grade|24\s*\/\s*7/i);
+        expect(security).toContain('href="/privacy.html#requests"'); expect(privacy).toContain('id="requests"');
+    });
+    test('the pages name the company, not a person, and are in the sitemap', () => {
+        const about = read('about.html');
+        expect(about).toContain('Legal name: No Fries Limited');
+        expect(about).not.toMatch(/founder|\bJoel\b/i);
+        for (const page of ['about.html', 'security.html', 'faq.html']) expect(read('sitemap.xml')).toContain('<loc>https://nofries.nz/' + page + '</loc>');
+        expect(read('faq.html')).toContain('NZ$1,250 + GST'); expect(read('pricing.html')).toContain('NZ$1,250 + GST for 90 days');
+    });
+});
+
 describe('dormant dashboard document', () => {
     test('dashboard document serves the same generic hash-bound entry at both aliases without activating APIs', async () => {
         const first = await request(app).get('/dashboard?organisationId=untrusted-record');

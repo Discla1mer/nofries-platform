@@ -97,5 +97,8 @@ text. Preserve the prior N/A and contact-request availability distinctions.
 Record fresh independent copy review of all three drafts, this checklist and the
 PR descriptions, together with final-head hosted CI, in the descriptions.
 
+- `about.html` (public route `/about`): who No Fries Limited is, what it offers and company details. No named people (owner decision, 12 Nov 2026). Linked from every public footer (#675).
+- `security.html` (public route `/security`): plain summary of storage location, encryption, sign-in, access and breach notification, drawn from the privacy notice. Linked from every public footer (#675).
+- `faq.html` (public route `/faq`): common questions about the free check. Linked from every public footer (#675).
 - `consultants.html` (public route `/consultants`): how consultants and IT providers use the free check for clients, the referral arrangement approved on 9 Nov 2026, and what is not offered yet. Linked from Pricing (#674).
 - `offer.html` (public route `/offer`): Browns Bay local licence enquiry. Linked from the homepage footer; special pricing appears on the offer page only, subject to vendor confirmation.

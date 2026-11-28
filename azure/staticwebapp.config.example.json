@@ -15,6 +15,9 @@
   "routes": [
     { "route": "/consultants", "rewrite": "/consultants.html" },
     { "route": "/offer", "rewrite": "/offer.html" },
+    { "route": "/about", "rewrite": "/about.html" },
+    { "route": "/security", "rewrite": "/security.html" },
+    { "route": "/faq", "rewrite": "/faq.html" },
     { "route": "/login", "rewrite": "/login.html", "headers": { "Cache-Control": "private, no-store", "X-Robots-Tag": "noindex, nofollow" } },
     { "route": "/api/organisation-setup/choose", "methods": ["POST"], "allowedRoles": ["anonymous"], "headers": { "Cache-Control": "no-store" } },
     {
@@ -258,14 +261,6 @@
     {
       "route": "/founder.html",
       "redirect": "/scoping"
-    },
-    {
-      "route": "/about.html",
-      "redirect": "/"
-    },
-    {
-      "route": "/About.html",
-      "redirect": "/"
     },
     {
       "route": "/CloudPC.html",
