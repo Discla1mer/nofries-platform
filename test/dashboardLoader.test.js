@@ -4154,3 +4154,79 @@ test('dashboard startup shows one steady progress message instead of changing st
     expect(SOURCE.match(/loadingStage\(cycle, OPENING_MESSAGE, OPENING_DETAIL\)/g)).toHaveLength(2);
     expect(SOURCE.match(/sessionForReconcile\(cycle, OPENING_MESSAGE, OPENING_DETAIL\)/g)).toHaveLength(2);
 });
+
+describe('#653 an unfinished sign-up is offered its set-up form, not an access refusal', () => {
+    const SETUP = '/api/external-customer-signup/state';
+    const pending = status => ({ state: { status }, csrfToken: 'x'.repeat(43) });
+    test.each(['setup_details', 'resume_setup', 'continue_authentication', 'terms', 'resume_acceptance', 'pending_preparation'])(
+        'a denied first read with sign-up state %s shows Finish setting up', async status => {
+            const h = harness({ external: true }); await flush();
+            await h.reply(0, 403, { code: 'dashboard_access_denied' });
+            expect(h.status).toBe('denied');
+            expect(h.requests).toHaveLength(2);
+            expect(h.requests[1].url).toBe(SETUP);
+            expect(h.requests[1].init.method).toBe('GET');
+            expect(h.requests[1].init.body).toBeUndefined();
+            await h.reply(1, 200, pending(status));
+            expect(h.status).toBe('setup');
+            expect(h.elements.dashboardHeading.textContent).toBe('Finish setting up your account');
+            expect(h.elements.dashboardSignIn.hidden).toBe(false);
+            expect(h.elements.dashboardSignIn.textContent).toBe('Finish setting up');
+            expect(h.elements.dashboardSignIn.href).toBe('/signup?provider=external');
+            expect(h.elements.dashboardRetry.hidden).toBe(true);
+            const other = h.document.getElementById('dashboardSetupSwitch');
+            expect(other.hidden).toBe(false);
+            expect(other.textContent).toBe('Use a different email');
+            expect(other.href).toBe('/api/external-customer-auth/login?account=choose');
+            expect(h.elements.dashboardApp.children).toHaveLength(0);
+        });
+    test.each([
+        ['an existing account', 200, pending('continue_to_dashboard')],
+        ['a read-only set-up', 200, pending('setup_read_only')],
+        ['no account', 200, pending('create_account')],
+        ['a waiting admission', 200, pending('pending_admission')],
+        ['an unknown status', 200, pending('anything_else')],
+        ['a malformed body', 200, { status: 'setup_details' }],
+        ['a sign-in refusal', 401, { code: 'signup_signin_required' }],
+        ['a service failure', 503, { code: 'signup_unavailable' }]
+    ])('%s keeps the access refusal', async (_name, status, body) => {
+        const h = harness({ external: true }); await flush();
+        await h.reply(0, 403, { code: 'dashboard_access_denied' });
+        await h.reply(1, status, body);
+        expect(h.status).toBe('denied');
+        expect(h.elements.dashboardHeading.textContent).toBe('Dashboard access is unavailable');
+        expect(h.elements.dashboardSignIn.href).toBe('/login?provider=external');
+        expect(h.document.getElementById('dashboardSetupSwitch')).toBeNull();
+    });
+    test('staff and legacy sign-ins never ask the sign-up service', async () => {
+        for (const options of [{}, { provider: 'legacy' }]) {
+            const h = harness(options); await flush();
+            await h.reply(0, 403, { code: 'dashboard_access_denied' });
+            expect(h.status).toBe('denied'); expect(h.requests).toHaveLength(1);
+        }
+    });
+    test('a refusal after a dashboard session was open is not treated as set-up', async () => {
+        const h = harness({ external: true }); await flush();
+        await h.reply(0, 200, state(null, GA, { purpose: 'customer', accountType: 'company' }));
+        const before = h.requests.length;
+        expect(before).toBeGreaterThan(1);
+        await h.reply(before - 1, 403, { code: 'dashboard_access_denied' });
+        expect(h.status).toBe('denied');
+        expect(h.requests.slice(before).some(item => item.url === SETUP)).toBe(false);
+    });
+    test('leaving the set-up state restores the ordinary sign-in button', async () => {
+        const h = harness({ external: true }); await flush();
+        await h.reply(0, 403, { code: 'dashboard_access_denied' });
+        await h.reply(1, 200, pending('setup_details'));
+        expect(h.status).toBe('setup');
+        for (const name of ['focus', 'pageshow']) { h.event(name, { persisted: true }); await flush(); }
+        const next = h.requests.length - 1;
+        expect(next).toBeGreaterThan(1);
+        expect(h.requests[next].url).toBe('/api/dashboard/session');
+        await h.reply(next, 401, { code: 'dashboard_authentication_required' });
+        expect(h.status).toBe('unauthenticated');
+        expect(h.elements.dashboardSignIn.href).toBe('/login?provider=external');
+        expect(h.elements.dashboardSignIn.textContent).not.toBe('Finish setting up');
+        expect(h.document.getElementById('dashboardSetupSwitch').hidden).toBe(true);
+    });
+});

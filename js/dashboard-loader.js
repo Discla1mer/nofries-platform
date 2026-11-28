@@ -299,8 +299,38 @@
         const hash = String(window.location.hash || '');
         return ROUTES.includes(hash.slice(1)) ? hash : '';
     }
-    elements.signIn.href = customerProvider === 'staff'
+    const signInEntry = customerProvider === 'staff'
         ? '/api/auth/login?returnTo=' + encodeURIComponent('/dashboard' + currentRoute()) : customerEntry;
+    elements.signIn.href = signInEntry;
+    const signInLabel = elements.signIn.textContent;
+    // #653: a signed-in person who has not finished creating their account.
+    // These fixed local destinations are the only ones offered; the sign-up
+    // page re-reads the state itself and decides what the person may do.
+    const SETUP_STATE = '/api/external-customer-signup/state';
+    const SETUP_RESUME = '/signup?provider=external';
+    const SETUP_PENDING = ['setup_details', 'resume_setup', 'continue_authentication', 'terms', 'resume_acceptance', 'pending_preparation'];
+    let setupSwitch = null;
+    function setupSwitchLink(visible) {
+        if (!visible) { if (setupSwitch) setupSwitch.hidden = true; return; }
+        if (!setupSwitch) {
+            setupSwitch = document.createElement('a');
+            setupSwitch.id = 'dashboardSetupSwitch';
+            setupSwitch.className = 'text-link';
+            setupSwitch.textContent = 'Use a different email';
+            setupSwitch.href = '/api/external-customer-auth/login?account=choose';
+            (elements.signIn.parentElement || elements.panel).append(setupSwitch);
+        }
+        setupSwitch.hidden = false;
+    }
+    // Display only. A denied first read stays denied unless the sign-up
+    // service itself says this sign-in has an unfinished set-up.
+    function offerSetupResume(cycle) {
+        request(cycle, SETUP_STATE).then(function (result) {
+            const status = result.status === 200 && result.value && result.value.state && result.value.state.status;
+            if (!current(cycle) || document.body.dataset.dashboardState !== 'denied' || !SETUP_PENDING.includes(status)) return;
+            show(cycle, 'setup');
+        }).catch(function () { /* Stay on the denied state. */ });
+    }
     // A signed-out visitor may be new. Offer account creation beside sign-in.
     const createAccount = document.getElementById('dashboardCreateAccount');
     const createAccountLink = document.getElementById('dashboardCreateAccountLink');
@@ -391,6 +421,7 @@
             unauthenticated: ['Please sign in', 'Use the email address for your No Fries account.', 'You are not signed in.'],
             expired: ['Please sign in again', 'Your sign-in has ended. Sign in to continue.', 'This is not a service outage.'],
             denied: ['Dashboard access is unavailable', 'Your current identity does not have the required access.', 'No dashboard content is displayed.'],
+            setup: ['Finish setting up your account', 'You started creating a No Fries account. Carry on where you left off.', 'Your sign-in worked. Your account set-up is not finished yet.'],
             unavailable: ['No Fries is having a temporary problem', 'We could not open your dashboard just now. Try again in a moment. You do not need to sign in again.', 'This is a temporary service problem, not a lost sign-in.'],
             signout: ['Sign-out is not confirmed', 'The request may still complete. Retry to check sign-out.', 'Dashboard content has been cleared.']
         }[state];
@@ -424,9 +455,11 @@
         elements.status.textContent = copy[2];
         elements.retry.hidden = !['unavailable', 'signout', 'denied'].includes(state);
         elements.retry.disabled = false;
-        elements.signIn.hidden = !['unauthenticated', 'expired', 'denied'].includes(state);
-        if (!elements.signIn.dataset.restingLabel) elements.signIn.dataset.restingLabel = elements.signIn.textContent;
-        elements.signIn.textContent = state === 'expired' ? 'Sign in again' : elements.signIn.dataset.restingLabel;
+        elements.signIn.hidden = !['unauthenticated', 'expired', 'denied', 'setup'].includes(state);
+        elements.signIn.textContent = state === 'expired' ? 'Sign in again' : state === 'setup' ? 'Finish setting up' : signInLabel;
+        // #653: the same button leads back to the set-up form for an unfinished account.
+        elements.signIn.href = state === 'setup' ? SETUP_RESUME : signInEntry;
+        setupSwitchLink(state === 'setup');
         if (state === 'unauthenticated' || state === 'expired') rememberReturnRoute();
         if (createAccount) createAccount.hidden = customerProvider === 'staff' || gateway || state !== 'unauthenticated';
         elements.signOut.hidden = !hadSession || !!unresolved || ['unauthenticated', 'expired'].includes(state);
@@ -443,6 +476,7 @@
     }
     function failure(cycle, error) {
         if (!current(cycle)) return;
+        const firstRead = !cycle.session && !hadSession;
         const revoked = error && (error.expired || [401, 403].includes(error.status));
         cycle = begin(revoked ? null : clientDraft(cycle));
         cycle.busy = false;
@@ -455,6 +489,7 @@
         else {
             show(cycle, error && error.status === 403 ? 'denied' : 'unavailable');
             if (error && error.status >= 500 && error.supportReference) elements.status.textContent += ' Support reference: ' + error.supportReference + '.';
+            if (error && error.status === 403 && externalCustomer && firstRead) offerSetupResume(cycle);
         }
     }
     function invalid(transport) { const error = new Error('dashboard_response_invalid'); error.validation = !transport; return error; }
