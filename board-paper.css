@@ -1,0 +1,28 @@
+/* The board report is one named print target. Other dashboard exports keep their existing layout. */
+.board-paper {
+    box-sizing: border-box;
+    max-width: 46rem;
+    margin-block: 1rem;
+    padding: clamp(1rem, 3vw, 2rem);
+    border: 1px solid currentColor;
+    overflow-wrap: anywhere;
+    line-height: 1.45;
+}
+.board-paper header, .board-paper footer { border-block-end: 1px solid currentColor; }
+.board-paper h1 { font-size: 1.7em; margin: .2em 0; }
+.board-paper h2 { font-size: 1.2em; margin: 1em 0 .2em; }
+.board-paper p, .board-paper ol, .board-paper dl { margin: .45em 0; }
+.board-paper ol { padding-inline-start: 1.7em; }
+.board-paper dt { font-weight: 600; }
+.board-paper dd { margin: 0 0 .4em; }
+.board-paper-next { white-space: pre-line; }
+.board-paper footer { margin-block-start: 1.2em; border-block: 1px solid currentColor 0; font-size: .86em; }
+@page board-report { size: A4; margin: 14mm; }
+@media print {
+    .board-paper.picture-print-only {
+        page: board-report; max-width: none; width: 100%; margin: 0; padding: 0; border: 0;
+        font-size: 10pt; line-height: 1.35;
+    }
+    .board-paper h2, .board-paper dt { break-after: avoid; }
+    .board-paper header, .board-paper footer, .board-paper li { break-inside: avoid; }
+}
