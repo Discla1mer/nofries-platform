@@ -9,6 +9,7 @@
     line-height: 1.45;
 }
 .board-paper header, .board-paper footer { border-block-end: 1px solid currentColor; }
+.board-paper header time { display: block; margin-block: .45em; }
 .board-paper h1 { font-size: 1.7em; margin: .2em 0; }
 .board-paper h2 { font-size: 1.2em; margin: 1em 0 .2em; }
 .board-paper p, .board-paper ol, .board-paper dl { margin: .45em 0; }
@@ -16,7 +17,7 @@
 .board-paper dt { font-weight: 600; }
 .board-paper dd { margin: 0 0 .4em; }
 .board-paper-next { white-space: pre-line; }
-.board-paper footer { margin-block-start: 1.2em; border-block: 1px solid currentColor 0; font-size: .86em; }
+.board-paper footer { margin-block-start: 1.2em; border-block-start: 1px solid currentColor; border-block-end: 0; font-size: .86em; }
 @page board-report { size: A4; margin: 14mm; }
 @media print {
     .board-paper.picture-print-only {
