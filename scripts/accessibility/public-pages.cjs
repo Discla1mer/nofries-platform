@@ -140,7 +140,13 @@ async function publicHeader(page, route, width) {
         assert.ok(await page.locator('.lockup-mark').evaluate(el => el.complete && el.naturalWidth > 0), 'Hero image loaded');
         await page.locator('#dashboardSkipLink').focus();
         await page.keyboard.press('Tab');
-        assert.ok(await (hiddenBrand ? login : brand).evaluate(el => el === document.activeElement), 'Tab reaches the first visible header link');
+        // On phones the brand is hidden here, so the first header stop is the first page link (#670).
+        const firstLink = hiddenBrand ? header.locator('nav[aria-label="Main navigation"] > a').first() : brand;
+        if (hiddenBrand) for (const name of ['Home', 'Pricing', 'Managed IT', 'Roadmap', 'Contact']) {
+            const link = header.getByRole('link', { name, exact: true }), box = await link.boundingBox();
+            assert.ok(await link.isVisible() && box.height >= 44, route + ': ' + name + ' is a visible 44px header link at ' + width + 'px');
+        }
+        assert.ok(await firstLink.evaluate(el => el === document.activeElement), 'Tab reaches the first visible header link');
         if (hiddenBrand) {
             assert.ok(await brand.evaluate(el => { el.focus(); return el !== document.activeElement; }), 'Hidden brand cannot receive focus');
             const bounds = await login.boundingBox(), headerBounds = await header.boundingBox();

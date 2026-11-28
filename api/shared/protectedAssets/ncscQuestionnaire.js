@@ -473,6 +473,29 @@
     const attention = row => (row.weight || 0) * V2_GAP_FACTOR[row.responseOptionId];
     const GAP_WHY = 'This control helps lower the chance or impact of a cyber incident for your business.';
     const GAP_NEXT = 'Agree who will look at this control and when you will check it again.';
+    // #714: "Why it matters" on a v2 gap names the business harm in one plain
+    // sentence. The profile's guidance summary is answering help for the form,
+    // so it is not shown on results. Wording approved by the owner in review.
+    const V2_GAP_WHY = Object.freeze({
+        'NF-NCSC-MCSS-RM-01-Q1': 'Risks nobody owns tend to get no budget or attention until something goes wrong.',
+        'NF-NCSC-MCSS-SA-01-Q1': 'Many attacks start with a message that tricks a staff member. People who know the signs can stop one before it costs money.',
+        'NF-NCSC-MCSS-AI-01-Q1': 'You can\'t protect or update a device, app or data set you don\'t know you have, and forgotten ones are easy targets.',
+        'NF-NCSC-MCSS-PA-01-Q1': 'Attackers use known flaws in out-of-date software to break in. Updates close those flaws.',
+        'NF-NCSC-MCSS-MF-01-Q1': 'A stolen or guessed password is enough to take over an account unless a second login step stands in the way.',
+        'NF-NCSC-MCSS-MF-01-Q2': 'Text and email codes can be intercepted or tricked out of people. Passkeys and security keys are much harder to steal.',
+        'NF-NCSC-MCSS-DU-01-Q1': 'Without activity records and alerts, a break-in can go unnoticed for weeks and you can\'t tell what was taken.',
+        'NF-NCSC-MCSS-LP-01-Q1': 'The more each account can reach, the more damage a stolen login or a mistake can do.',
+        'NF-NCSC-MCSS-DR-01-Q1': 'If ransomware, theft or a fault wipes your files, a backup the attacker can\'t reach is how you get the business running again.',
+        'NF-NCSC-MCSS-DR-01-Q2': 'A backup that has never been restored may not work when you need it. Testing shows how long recovery really takes.',
+        'NF-NCSC-MCSS-RP-01-Q1': 'In the first hours of an incident, not knowing who to call or what to do costs time, money and data.',
+        'NF-NCSC-CC-PM-01-Q1': 'Reused or shared passwords mean one leaked login can open several accounts. A password manager makes unique passwords practical.',
+        'NF-NCSC-CC-SV-01-Q1': 'Scammers pose as suppliers, managers or staff to get bank details or logins changed. A second check stops the payment or reset going to them.',
+        'NF-NCSC-CC-NS-01-Q1': 'A router with its default password, or Wi-Fi shared with guests, gives a stranger a way into your business systems.',
+        'NF-NCSC-CC-SU-01-Q1': 'A supplier\'s stolen login can become a way into your data. Limits and an extra login step reduce what an attacker can reach.',
+        'NF-NCSC-CC-EM-01-Q1': 'If others can send email that looks like yours, your customers and staff can be tricked into paying or sharing logins.'
+    });
+    const gapWhy = (metadata, question) => isV2(metadata) && V2_GAP_WHY[question.id] ||
+        firstText(question.guidance && question.guidance.summary) || GAP_WHY;
     const firstText = (...values) => values.find(value => typeof value === 'string' && value.trim()) || null;
     function rankedGaps(result, metadata) {
         if (!result || !Array.isArray(result.domains) || !metadata || !Array.isArray(metadata.questions)) return [];
@@ -497,7 +520,7 @@
             return { itemId: question.id, title: questionTitle(metadata, question, title.split(' — ').pop()), answer: row.answer,
                 responseOptionId: row.responseOptionId,
                 firstCheck: firstText((plain.checks || [])[0], (guidance.startingActions || [])[0]) || GAP_NEXT,
-                why: firstText(guidance.summary) || GAP_WHY,
+                why: gapWhy(metadata, question),
                 next: firstText(plain.meaning, (guidance.startingActions || [])[0]) || GAP_NEXT };
         });
     }
@@ -2881,5 +2904,5 @@
         else openAssessment(initialAssessmentId);
         return controller;
     }
-    return Object.freeze({ mount: mount, consultantViewer, gapHelp, managedSecurityPrice: MANAGED_SECURITY_PRICE, topGaps, confirmNext, v2Shortfall, rankedGapSection, resultModel: resultModel, providerSummary: providerSummary, boardSummary: boardSummary, questionnaireAnswers: questionnaireAnswers, resultsCampaign: resultsCampaign, boardSummaryBlock: boardSummaryBlock, printOnly: printOnly, managedSecurityOffer: managedSecurityOffer, copySummary: copySummary, enoughAnswersToEstimate: enoughAnswersToEstimate });
+    return Object.freeze({ mount: mount, consultantViewer, gapHelp, managedSecurityPrice: MANAGED_SECURITY_PRICE, gapWhy, topGaps, confirmNext, v2Shortfall, rankedGapSection, resultModel: resultModel, providerSummary: providerSummary, boardSummary: boardSummary, questionnaireAnswers: questionnaireAnswers, resultsCampaign: resultsCampaign, boardSummaryBlock: boardSummaryBlock, printOnly: printOnly, managedSecurityOffer: managedSecurityOffer, copySummary: copySummary, enoughAnswersToEstimate: enoughAnswersToEstimate });
 }));
