@@ -14,13 +14,13 @@ const APPROVED = [
     'NZ$99 + GST per organisation per month or NZ$990 + GST per year (two months free).',
     'One plan includes both the NIST CSF 2.0 and ISO 27001 readiness self-assessments. There is no per-framework charge.',
     'Both are included at no extra charge during the NZ$1,250 + GST 90-day engagement.',
-    'Advisers pay the same rate per client organisation and we invoice the adviser.',
     'We invoice manually, then our staff enable access. No payment card is needed.'
 ];
 const ISO_LIMIT = 'The ISO 27001 readiness self-assessment is not certification. For accredited certification, use an accredited certification body.';
 
 test('public paid assessment copy states the approved terms as an available add-on', () => {
-    for (const sentence of [APPROVED[1], APPROVED[3], APPROVED[4]]) expect([sentence, text.includes(sentence)]).toEqual([sentence, true]);
+    for (const sentence of [APPROVED[1], APPROVED[3]]) expect([sentence, text.includes(sentence)]).toEqual([sentence, true]);
+    expect(text).not.toMatch(/Advisers pay/);
     expect(text).toMatch(/Both are included at no extra charge during the 90-day engagement/);
     expect(text).toContain('The NIST CSF 2.0 and ISO 27001 readiness self-assessments are available as a paid add-on.');
     expect(text).toContain(ISO_LIMIT);
