@@ -1068,7 +1068,7 @@ test('the board maps saved actions in ranked question order and opens only each 
         controls[index].querySelector('button')?.click();
     });
     expect(openAction.mock.calls).toEqual([[actions[2].editTarget, true], [actions[1].editTarget, true]]);
-    expect(handoff.querySelector('.picture-board-print').textContent).toBe(board.value);
+    rows.forEach((_, i) => expect(handoff.querySelector('.board-paper-next').textContent).toContain('Synthetic owner ' + (i + 1)));
     expect(base).not.toContain('Synthetic owner');
     // Duplicated question, wrong control and wrong kind cannot fill a different gap.
     actions = [{ ...actions[0], kind: 'evidence' }, { ...actions[1], controlId: 'other' }, actions[2], actions[2]];
@@ -1264,8 +1264,8 @@ test('the board summary supersedes the previous submission and lists the changed
     const moved = mixedResponses().filter(row => row.optionId !== 'no').length;
     assert.equal(changes.length, moved); assert.ok(moved > 0);
     assert.ok(changes.every(line => /^- .+: No → /.test(line) && !/: No → No$/.test(line)));
-    const printed = walk(dom.root).find(node => node.tagName === 'PRE' && node.className.includes('picture-board-print'));
-    assert.equal(printed.textContent, board.value);
+    const printed = walk(dom.root).find(node => node.tagName === 'ARTICLE' && node.className.includes('picture-board-print'));
+    changes.forEach(change => assert.ok(printed.textContent.includes(change.slice(2))));
     // One extra read of the earlier submission, and no writes.
     assert.deepEqual(reads, [later.assessmentId, earlier.assessmentId]); assert.equal(writes(), 0);
     dom.controller.destroy();
@@ -1687,7 +1687,11 @@ describe('next step under the top gaps', () => {
         assert.match(board.value, /Not certification or independent assurance\./);
         assert.match(board.value, /Next steps agreed \(owner and date\): $/);
         assert.doesNotMatch(board.value, /Synthetic organisation A|shared-preview-organisation|46\.4%/);
-        assert.equal(handoff.querySelectorAll('pre')[1].textContent, board.value);
+        const report = handoff.querySelector('.board-paper');
+        assert.match(report.textContent, /Synthetic organisation A/);
+        assert.match(report.textContent, /Author and role are not available/);
+        assert.match(report.textContent, /Agree who will take the first gap/);
+        assert.ok(report.querySelector('ol').children.length > 0);
         assert.equal(handoff.querySelectorAll('a').length, 0);
         controller.destroy();
     });
