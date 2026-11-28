@@ -1230,6 +1230,7 @@ function mountPublicAssets(application) {
         .map((fileName) => [`/${fileName}`, fileName]);
     rootRoutes.push(['/', 'index.html']);
     rootRoutes.push(['/pricing', 'pricing.html']);
+    rootRoutes.push(['/consultants', 'consultants.html']); // #674
     rootRoutes.push(['/offer', 'offer.html']);
     rootRoutes.push(['/invoice-scams', 'invoice-scams.html']);
     rootRoutes.forEach(([route, fileName]) => {

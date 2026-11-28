@@ -13,6 +13,7 @@
     "Origin-Agent-Cluster": "?1"
   },
   "routes": [
+    { "route": "/consultants", "rewrite": "/consultants.html" },
     { "route": "/offer", "rewrite": "/offer.html" },
     { "route": "/scams", "redirect": "/invoice-scams", "statusCode": 301 },
     { "route": "/scam", "redirect": "/invoice-scams", "statusCode": 301 },

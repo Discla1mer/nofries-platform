@@ -217,6 +217,28 @@ describe('short scam addresses (#697)', () => {
     });
 });
 
+describe('consultants page (#674)', () => {
+    const fs = require('fs'), path = require('path');
+    const read = name => fs.readFileSync(path.join(__dirname, '..', name), 'utf8');
+    test.each(['/consultants', '/consultants.html'])('%s is a real page', async route => {
+        const page = await request(app).get(route);
+        expect(page.status).toBe(200); expect(page.text).toContain('<h1>Use No Fries with your clients</h1>');
+    });
+    test('it states the approved referral terms and the current free allowance, and promises nothing else', () => {
+        const page = read('consultants.html');
+        const plan = JSON.parse(read('api/shared/customerSignup/starterPlan.json'));
+        expect(page).toContain('up to ' + plan.consultantClientOrganisations + ' client organisations');
+        expect(page).toContain('You earn 20% of what that client pays, excluding GST, for 12 months from their first payment.');
+        expect(page).toContain('No Fries contracts with the client, sends the invoices and provides the support.');
+        // No price for the paid add-on here: Pricing says to ask, and this page must agree.
+        expect(page).not.toMatch(/NZ\$|\$\d/);
+        expect(read('pricing.html')).toContain('id="paid-assessment-price">Ask us for current pricing.');
+        expect(page).not.toMatch(/white[- ]label is available|unlimited clients|guarantee/i);
+        expect(read('pricing.html')).toContain('<a href="/consultants">how No Fries works with consultants</a>');
+        expect(read('sitemap.xml')).toContain('<loc>https://nofries.nz/consultants.html</loc>');
+    });
+});
+
 describe('dormant dashboard document', () => {
     test('dashboard document serves the same generic hash-bound entry at both aliases without activating APIs', async () => {
         const first = await request(app).get('/dashboard?organisationId=untrusted-record');

@@ -97,4 +97,5 @@ text. Preserve the prior N/A and contact-request availability distinctions.
 Record fresh independent copy review of all three drafts, this checklist and the
 PR descriptions, together with final-head hosted CI, in the descriptions.
 
+- `consultants.html` (public route `/consultants`): how consultants and IT providers use the free check for clients, the referral arrangement approved on 9 Nov 2026, and what is not offered yet. Linked from Pricing (#674).
 - `offer.html` (public route `/offer`): Browns Bay local licence enquiry. Linked from the homepage footer; special pricing appears on the offer page only, subject to vendor confirmation.
