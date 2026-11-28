@@ -501,6 +501,8 @@
             if (label && label !== name) account.append(element('p', '', label));
             if (!name && !label) account.append(element('p', '', 'You are signed in.'));
             if (model.currentUser.jobTitle) account.append(element('p', '', model.currentUser.jobTitle));
+            // #721: the free plan has one sign-in per organisation; say so where people look for invites.
+            account.append(element('p', 'dashboard-muted', 'Your plan includes 1 user for this organisation. Inviting colleagues is coming soon.'));
             const notifications = panel('Notifications');
             const preferences = element('a', '', 'Manage lifecycle email preferences');
             preferences.href = '/account/email';

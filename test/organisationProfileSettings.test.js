@@ -86,3 +86,12 @@ test('Settings says how long a sign-in lasts, matching the server session limit'
     const auth = fs.readFileSync(path.join(__dirname, '../api/shared/browserAuth.js'), 'utf8');
     expect(auth).toContain('const SESSION_ABSOLUTE_TTL_MS = 4 * 60 * 60 * 1000;');
 });
+
+// #721: Settings says the plan has one sign-in per organisation, matching the starter plan.
+test('Settings says the plan includes one user', () => {
+    const fs = require('fs'), path = require('path');
+    const h = mount();
+    expect(h.dom.root.textContent).toContain('Your plan includes 1 user for this organisation. Inviting colleagues is coming soon.');
+    h.controller.destroy();
+    expect(JSON.parse(fs.readFileSync(path.join(__dirname, '../api/shared/customerSignup/starterPlan.json'), 'utf8')).usersPerOrganisation).toBe(1);
+});
