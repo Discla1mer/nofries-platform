@@ -449,7 +449,7 @@
         }
         function render() {
             if (!alive || mounted.get(root) !== controller) return;
-            status.textContent = message;
+            renderJobs(); status.textContent = message;
             if (message === emptyListMessage && !initialSource && !target) status.prepend(planIllustration());
             if (busy && !focusAfterRead) {
                 if (inControls(doc.activeElement)) focusAfterRead = doc.activeElement;
@@ -479,6 +479,69 @@
                     focusAfterRead = null;
                 }
             } else { toolbar.remove(); editorPanel.remove(); }
+        }
+        // Only the accepted presentation for this mounted plan supplies jobs. Nothing is retained or sent.
+        const jobs = node('section'); jobs.className = 'dashboard-panel'; jobs.hidden = true;
+        let jobsModel = null, jobsOwner = null;
+        function renderJobs() {
+            if (!model || denied) { jobs.hidden = true; jobs.replaceChildren(); jobsModel = null; return; }
+            if (model === jobsModel && jobsOwner === currentOwner) return;
+            jobsModel = model; jobsOwner = currentOwner;
+            const snap = model, owner = node('select'), week = node('input'), list = node('ul'), notice = node('p');
+            jobs.hidden = !snap.actions.length; jobs.replaceChildren(node('h2', 'Jobs by owner'));
+            owner.setAttribute('aria-label', 'Filter jobs by owner'); week.type = 'checkbox';
+            const label = node('label', 'Due this week'); label.append(week);
+            const owners = new Map(), memberLabels = new Map();
+            function identity(a) { return labelled(a) ? 'name:' + a.ownerLabel : a.ownerSubjectKey || 'unassigned'; }
+            function name(a) {
+                if (labelled(a)) return a.ownerLabel;
+                if (!a.ownerSubjectKey) return 'Unassigned';
+                if (a.ownerSubjectKey === currentOwner) return 'You';
+                if (!memberLabels.has(a.ownerSubjectKey)) memberLabels.set(a.ownerSubjectKey, 'Team member ' + (memberLabels.size + 1));
+                return memberLabels.get(a.ownerSubjectKey);
+            }
+            const actions = snap.actions.filter(a => a.status !== 'completed');
+            actions.forEach(a => owners.set(identity(a), name(a)));
+            const keys = Array.from(owners.keys()), first = node('option', 'All owners'); first.value = ''; owner.append(first);
+            keys.forEach((k, i) => { const opt = node('option', owners.get(k)); opt.value = String(i); owner.append(opt); });
+            owner.value = '';
+            const parts = Object.fromEntries(new Intl.DateTimeFormat('en-NZ', { timeZone: 'Pacific/Auckland', year: 'numeric',
+                month: '2-digit', day: '2-digit' }).formatToParts(new Date(snap.asOf)).map(p => [p.type, p.value]));
+            const monday = new Date(parts.year + '-' + parts.month + '-' + parts.day + 'T00:00:00Z');
+            monday.setUTCDate(monday.getUTCDate() - (monday.getUTCDay() + 6) % 7);
+            const dayKey = v => v.toISOString().slice(0, 10);
+            const start = dayKey(monday); monday.setUTCDate(monday.getUTCDate() + 6); const end = dayKey(monday);
+            const selected = () => actions.filter(a => (owner.value === '' || identity(a) === keys[Number(owner.value)]) &&
+                (!week.checked || (a.dueDate && a.dueDate >= start && a.dueDate <= end)));
+            const jobLine = a => actionName(a) + ': ' + actionWork(a) + ' · ' + name(a) + ' · Due: ' + day(a.dueDate);
+            const heading = () => (owner.value === '' ? 'All owners' : owners.get(keys[Number(owner.value)])) + (week.checked ? ' · Due this week' : '');
+            const usable = () => active() && jobsModel === snap && model === snap && !jobs.hidden;
+            notice.setAttribute('role', 'status');
+            const win = doc.defaultView;
+            const copyJobs = button('Copy jobs', async () => {
+                if (!usable()) return;
+                try { await win.navigator.clipboard.writeText([heading(), ...selected().map(jobLine)].join('\n')); if (usable()) notice.textContent = 'Jobs copied.'; }
+                catch (_) { if (usable()) notice.textContent = 'Could not copy. Select the jobs below to copy them manually.'; }
+            });
+            const printJobs = button('Print jobs', () => {
+                if (!usable()) return;
+                const sheet = win.open('about:blank', '_blank');
+                if (!sheet) { notice.textContent = 'Allow the print window to open, then try again.'; return; }
+                sheet.opener = null; const page = sheet.document; page.title = 'Improvement plan jobs';
+                const h = page.createElement('h1'); h.textContent = heading(); const items = page.createElement('ul');
+                for (const a of selected()) { const li = page.createElement('li'); li.textContent = jobLine(a); items.append(li); }
+                page.body.replaceChildren(h, items); sheet.addEventListener('afterprint', () => sheet.close(), { once: true }); sheet.print();
+            });
+            const refreshJobs = () => {
+                if (!usable()) return;
+                const selectedJobs = selected(); list.replaceChildren();
+                selectedJobs.forEach(a => { const li = node('li', jobLine(a)); li.className = 'ncsc-preserve-text'; list.append(li); });
+                notice.textContent = selectedJobs.length ? selectedJobs.length + ' open jobs shown.' : 'No open jobs match these filters.';
+                copyJobs.disabled = printJobs.disabled = !selectedJobs.length;
+            };
+            owner.addEventListener('change', refreshJobs); week.addEventListener('change', refreshJobs);
+            const controls = node('div'); controls.className = 'picture-toolbar'; controls.append(owner, label, copyJobs, printJobs);
+            jobs.append(controls, notice, list); refreshJobs();
         }
         function waitText(value) {
             let seconds = null;
@@ -778,7 +841,7 @@
         let resolveReady;
         const ready = new Promise(resolve => { resolveReady = resolve; });
         controller = Object.freeze({ ready, destroy, requestLeave, refresh, select, openTarget, generate, execute, retry });
-        mounted.set(root, controller); root.replaceChildren(toolbar, status, editorPanel, content); render();
+        mounted.set(root, controller); root.replaceChildren(toolbar, status, editorPanel, jobs, content); render();
         readPage(null, false).then(resolveReady, function () { resolveReady(false); });
         return controller;
     }

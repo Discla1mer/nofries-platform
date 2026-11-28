@@ -1326,3 +1326,20 @@ describe('scoring v2 (#399): plan wording from the plan\'s own profile', () => {
         expect(h.root.querySelectorAll('article')[0].querySelector('h3').textContent).toContain('Control to review');
     });
 });
+
+test('#689: named owner and due-week filters drive both copy and print without another read', async () => {
+    let st = seed(); const ids = presentation(st).actions.slice(0,3).map(a => a.actionId);
+    st = append(st, 'assign', { ownerLabel:'Casey', dueDate:'2026-10-02' }, ids[0]);
+    st = append(st, 'assign', { ownerLabel:'Casey', dueDate:'2026-10-05' }, ids[1]);
+    st = append(st, 'assign', { ownerLabel:'Robin', dueDate:'2026-10-02' }, ids[2]);
+    const h = harness({ plan:st }); await h.controller.ready;
+    const owner = h.root.querySelector('[aria-label="Filter jobs by owner"]'), jobs = owner.parentElement.parentElement;
+    owner.value = owner.children.find(o => o.textContent === 'Casey').value; emit(owner,'change');
+    expect(jobs.querySelectorAll('li')).toHaveLength(2); const week = jobs.querySelector('input'); week.checked=true; emit(week,'change');
+    expect(jobs.querySelectorAll('li')).toHaveLength(1); const line = jobs.querySelector('li').textContent;
+    const w = h.document.defaultView, clipboard = { writeText:jest.fn().mockResolvedValue() }; w.navigator={ clipboard };
+    button(h,'Copy jobs').click(); await settle(); expect(clipboard.writeText).toHaveBeenCalledWith('Casey · Due this week\n'+line);
+    const print=createDom(); print.document.body=print.root; const popup={document:print.document,addEventListener:jest.fn(),print:jest.fn()};
+    w.open=jest.fn(()=>popup); button(h,'Print jobs').click(); expect(popup.print).toHaveBeenCalled(); expect(print.root.querySelectorAll('li')).toHaveLength(1);
+    expect(print.root.querySelector('li').textContent).toBe(line); expect(print.root.textContent).not.toContain('Robin'); expect(h.request).toHaveBeenCalledTimes(3);
+});
