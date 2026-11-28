@@ -253,10 +253,14 @@
         const followUps = options && options.itemFollowUps;
         if (!root || !root.ownerDocument || typeof root.replaceChildren !== 'function') throw new Error('improvement_view_root_required');
         if (mounted.has(root)) mounted.get(root).destroy();
-        const doc = root.ownerDocument, actionCards = new Map();
+        const doc = root.ownerDocument, actionCards = new Map(), assignButtons = new Map();
         const controller = Object.freeze({ destroy() {
-            actionCards.clear();
+            actionCards.clear(); assignButtons.clear();
             if (mounted.get(root) === controller) { root.replaceChildren(); mounted.delete(root); }
+        }, updateAssignments(ids) {
+            if (mounted.get(root) !== controller) return;
+            const permitted = new Set(ids);
+            for (const [id, button] of assignButtons) button.hidden = button.disabled = !permitted.has(id);
         }, focusAction(actionId) {
             if (mounted.get(root) !== controller || typeof actionId !== 'string') return false;
             const card = actionCards.get(actionId);
@@ -378,6 +382,10 @@
                     fact(facts, 'Completion meaning', 'Workflow completed; control implementation has not been verified.');
                 }
                 card.append(facts);
+                if (typeof options?.assignmentButton === 'function') {
+                    const assign = options.assignmentButton(action.actionId, actionTitle(action, titles), () => mounted.get(root) === controller);
+                    assignButtons.set(action.actionId, assign); card.append(assign);
+                }
                 const more = disclosure('Assessment details'), moreFacts = node('dl');
                 [['Assessment response', action.labels.response],
                     ['Response origin', action.labels.responseOrigin], ['Assessment evidence', action.labels.evidenceState]]
