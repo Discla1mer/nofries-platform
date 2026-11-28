@@ -935,6 +935,10 @@ describe('consultant client setup', () => {
         await h.reply(4, 200, fullClients());
         expect(h.document.getElementById('clientSetupControls').textContent).toContain('No client slots remain.');
         expect(h.document.getElementById('clientSetupControls').textContent).toContain('All client slots are in use, so this client was not set up.');
+        // #721: at the limit the consultant is told how to get more.
+        const more = h.document.getElementById('clientSetupMore').querySelector('a');
+        expect(more.textContent).toBe('Contact us'); expect(more.href).toBe('/contact.html');
+        expect(h.document.getElementById('clientSetupMore').textContent).toMatch(/^Need more clients? Contact uss+and we will sort it out with you.$/);
         expect(buttons(h).some(b => /Retry|Add client/.test(b.textContent))).toBe(false);
         h.window.dispatch('focus'); await flush();
         await h.reply(5, 200, consultant()); await h.reply(6, 200, listing([A])); await h.reply(7, 200, consultant());

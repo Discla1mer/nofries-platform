@@ -1281,7 +1281,13 @@
                         : state.remaining + (state.remaining === 1 ? ' client slot remains.' : ' client slots remain.') + slotRule));
                     const add = button('Add organisation', function () { if (available()) form(); });
                     add.classList.add('client-action-primary'); content.append(add);
-                } else content.append(element('p', 'No client slots remain.' + slotRule));
+                } else {
+                    content.append(element('p', 'No client slots remain.' + slotRule));
+                    // #721: say what to do at the limit instead of stopping there.
+                    const more = element('p', 'Need more clients? '), ask = element('a', 'Contact us');
+                    ask.href = '/contact.html'; more.append(ask, element('span', ' and we will sort it out with you.'));
+                    more.id = 'clientSetupMore'; content.append(more);
+                }
                 if (unlimitedList && state.nextCursor !== null) content.append(button('More saved setups', function () { run(undefined, state.nextCursor); }));
                 if (unlimitedList && listCursor !== null) content.append(button('First saved setups', function () { run(undefined, null); }));
                 // A routine focus/cache refresh retains inputs or the exact
