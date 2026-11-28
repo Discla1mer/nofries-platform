@@ -133,3 +133,19 @@ test('no public page still promises a fixed "top three gaps" order', () => {
     const client = fs.readFileSync(path.join(__dirname, '../api/shared/protectedAssets/ncscQuestionnaire.js'), 'utf8');
     expect(client).toMatch(/V2_GAP_LIMIT = 5\b/);
 });
+
+// #673: each campaign page shows the priced next step, matching the pricing page.
+test('every campaign page shows the 90-day price next to the offer', () => {
+    const fs = require('fs'), path = require('path');
+    const read = name => fs.readFileSync(path.join(__dirname, '..', name), 'utf8');
+    expect(read('pricing.html')).toContain('NZ$1,250 + GST for 90 days');
+    for (const page of ['insurance.html', 'supplier-questionnaire.html', 'board.html', 'invoice-scams.html']) {
+        const block = read(page).match(/<section class="ad-managed"[\s\S]*?<\/section>/)[0];
+        expect(block).toContain('<p class="ad-price">NZ$1,250 + GST for 90 days</p>');
+        expect(block).toContain('href="/pricing#pricing-pilot"');
+        // Time, output and a sample stay on the page too.
+        expect(read(page)).toMatch(/about 15 minutes/i);
+        expect(read(page)).toContain('href="/sample-result.html#');
+    }
+    expect(read('pricing.html')).toContain('File exports, such as PDF or spreadsheet downloads, are not included.');
+});

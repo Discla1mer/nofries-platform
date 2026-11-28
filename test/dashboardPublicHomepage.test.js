@@ -95,14 +95,20 @@ test('the homepage keeps only one compact MSP section below its Dashboard entry'
     assert.match(html, /aria-label="Dashboard benefits"/);
 });
 
-test('pricing stays on the pricing page, not the homepage', () => {
+// Owner decision, 28 Nov 2026 (#673): the homepage may show the 90-day price in its
+// offer block. Managed IT prices and every other price stay off the homepage.
+test('the homepage shows only the 90-day price, matching the pricing page', () => {
     const price = 'NZ$1,250 + GST';
-    // The homepage points to the 90-day service from its third step; the price itself stays on Pricing.
+    // The homepage points to the 90-day service from its third step and from the priced offer block.
     const offer = '<a href="/pricing#pricing-pilot">No Fries can fix these with you</a>';
     assert.ok(html.includes(offer));
     const pricingPage = fs.readFileSync(path.join(root, 'pricing.html'), 'utf8');
     assert.ok(pricingPage.includes(price + ' for 90 days'));
-    assert.doesNotMatch(html, /managed-it-per-user-price|managed-it-price-summary|managed-it-price-extras|id="pricing-dialog"|NZ\$|\$\d/);
+    const block = html.match(/<section class="ad-managed homepage-offer"[\s\S]*?<\/section>/)[0];
+    assert.ok(block.includes('<p class="ad-price">' + price + ' for 90 days</p>'));
+    assert.ok(block.includes('href="/pricing#pricing-pilot"'));
+    assert.doesNotMatch(html.replace(block, ''), /NZ\$|\$\d/);
+    assert.doesNotMatch(html, /managed-it-per-user-price|managed-it-price-summary|managed-it-price-extras|id="pricing-dialog"/);
     const { MANAGED_IT_POLICY } = require('../api/shared/managedItPolicy');
     assert.equal(MANAGED_IT_POLICY.customerFacingServiceName, 'No Fries Managed IT');
     assert.ok(Number.isFinite(MANAGED_IT_POLICY.pricing.perUserMonthly));
@@ -178,8 +184,10 @@ test('in-page homepage links move keyboard focus to their target section', () =>
 
 test('the NCSC figure states the survey population exactly as the 2026 tracker does', () => {
     const strip = html.match(/<section class="homepage-ncsc"[\s\S]*?<\/section>/)[0];
-    assert.match(strip, /<span class="visually-hidden">53% <\/span>of New Zealand SMEs with up to 49 full-time staff experienced a cyber attack or threat in the past six months\./);
-    assert.match(strip, /For SMEs with 20 to 49 full-time staff, it was 76%\./);
+    assert.match(strip, /<span class="visually-hidden">53% <\/span>of New Zealand SMEs with 0–49 full-time equivalents \(FTEs\) had a cyber attack or threat in the past six months\./);
+    assert.match(strip, /For those with 20–49 FTEs it was 76%\./);
+    // The tracker reports FTE bands, not head count (#672 review).
+    assert.doesNotMatch(strip, /full-time staff/);
     assert.match(strip, /a survey of 373 SME IT or operational decision makers\./);
     assert.doesNotMatch(strip, /\bHalf\b|small businesses/);
 });
