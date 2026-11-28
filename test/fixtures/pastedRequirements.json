@@ -1,0 +1,70 @@
+[
+  {
+    "name": "numbered sections and an indented continuation",
+    "source": "4.1. Review shared access quarterly.\r\n   Record who checked it.\r\n4.2) Remove unused access.",
+    "expected": [
+      [
+        1,
+        "4.1",
+        "Review shared access quarterly. Record who checked it."
+      ],
+      [
+        2,
+        "4.2",
+        "Remove unused access."
+      ]
+    ]
+  },
+  {
+    "name": "mixed source formats preserve duplicates and order",
+    "source": "• Keep a backup.\n- Keep a backup.\n\n* Review it.\n2026 review: confirm access.\n-2 degrees is a threshold.",
+    "expected": [
+      [
+        1,
+        null,
+        "Keep a backup."
+      ],
+      [
+        2,
+        null,
+        "Keep a backup."
+      ],
+      [
+        3,
+        null,
+        "Review it."
+      ],
+      [
+        4,
+        null,
+        "2026 review: confirm access."
+      ],
+      [
+        5,
+        null,
+        "-2 degrees is a threshold."
+      ]
+    ]
+  },
+  {
+    "name": "plain text, clauses and blank-line paragraph breaks",
+    "source": "2.3 Ask who approves access. \n  Māori data remains in scope.\n3.1.4.x stays verbatim.",
+    "expected": [
+      [
+        1,
+        "2.3",
+        "Ask who approves access."
+      ],
+      [
+        2,
+        null,
+        "Māori data remains in scope."
+      ],
+      [
+        3,
+        null,
+        "3.1.4.x stays verbatim."
+      ]
+    ]
+  }
+]
