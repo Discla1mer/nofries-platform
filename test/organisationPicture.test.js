@@ -1068,7 +1068,7 @@ test('the board maps saved actions in ranked question order and opens only each 
         controls[index].querySelector('button')?.click();
     });
     expect(openAction.mock.calls).toEqual([[actions[2].editTarget, true], [actions[1].editTarget, true]]);
-    expect(handoff.querySelector('.picture-board-print').textContent).toBe(board.value);
+    rows.forEach((_, i) => expect(handoff.querySelector('.board-paper-next').textContent).toContain('Synthetic owner ' + (i + 1)));
     expect(base).not.toContain('Synthetic owner');
     // Duplicated question, wrong control and wrong kind cannot fill a different gap.
     actions = [{ ...actions[0], kind: 'evidence' }, { ...actions[1], controlId: 'other' }, actions[2], actions[2]];
@@ -1264,8 +1264,8 @@ test('the board summary supersedes the previous submission and lists the changed
     const moved = mixedResponses().filter(row => row.optionId !== 'no').length;
     assert.equal(changes.length, moved); assert.ok(moved > 0);
     assert.ok(changes.every(line => /^- .+: No → /.test(line) && !/: No → No$/.test(line)));
-    const printed = walk(dom.root).find(node => node.tagName === 'PRE' && node.className.includes('picture-board-print'));
-    assert.equal(printed.textContent, board.value);
+    const printed = walk(dom.root).find(node => node.tagName === 'ARTICLE' && node.className.includes('picture-board-print'));
+    changes.forEach(change => assert.ok(printed.textContent.includes(change.slice(2))));
     // One extra read of the earlier submission, and no writes.
     assert.deepEqual(reads, [later.assessmentId, earlier.assessmentId]); assert.equal(writes(), 0);
     dom.controller.destroy();
@@ -1491,7 +1491,7 @@ function submittedWith(optionFor) {
 function gapView(dom) {
     const section = dom.root.querySelector('.picture-top-gaps');
     return { section, heading: section.querySelector('h3').textContent,
-        items: section.querySelectorAll('li').map(item => ({ id: item.dataset.gapItem, title: item.querySelector('h4').textContent, text: item.textContent })) };
+        items: section.querySelectorAll('.picture-top-gap').map(item => ({ id: item.dataset.gapItem, title: item.querySelector('h4').textContent, text: item.textContent })) };
 }
 
 test('top three gaps put priority-tier controls first, then not-in-place before partial, above the metrics', async () => {
@@ -1521,8 +1521,8 @@ test('top three gaps put priority-tier controls first, then not-in-place before 
     assert.match(printed.textContent, /\nSelf-reported gaps; not a risk ranking or certification\.\n/);
     assert.equal(printed.textContent.match(/certif|complian/gi).length, 1);
     // #441: the board or insurer summary carries one disclaimer of its own.
-    const boardPrinted = section.querySelectorAll('.picture-summary-print')[1];
-    assert.match(boardPrinted.textContent, /\nBasis: self-assessment [^\n]*Not certification or independent assurance\.\n/);
+    const boardPrinted = section.querySelector('.board-paper');
+    assert.match(boardPrinted.querySelector('footer').textContent, /Source: self-assessment [^\n]*Not certification or independent assurance\./);
     assert.equal(boardPrinted.textContent.match(/certif|complian/gi).length, 1);
     assert.doesNotMatch(section.textContent.replace(printed.textContent, '').replace(boardPrinted.textContent, ''), /certif|complian/i);
 });
@@ -1634,7 +1634,10 @@ describe('next step under the top gaps', () => {
         assert.doesNotMatch(help.textContent, /opens the contact form/i);
         const pricing = Array.from(help.querySelectorAll('a')).find(item => item.href === '/pricing#pricing-pilot');
         assert.ok(pricing, 'the offer still links to the full pricing and inclusions');
-        assert.doesNotMatch(panel.textContent, /Synthetic organisation A|46\.4%|assessment-mixed/);
+        // The private, gated paper is the only part of this panel that names the organisation.
+        const paper = panel.querySelector('.board-paper');
+        assert.doesNotMatch(panel.textContent.replace(paper.textContent, ''), /Synthetic organisation A|46\.4%|assessment-mixed/);
+        panel.querySelectorAll('a').forEach(a => assert.doesNotMatch(a.href, /Synthetic|46\.4|assessment-mixed/));
         controller.destroy();
     });
     test('reads availability with a bare same-origin GET and sends nothing about the assessment', async () => {
@@ -1687,7 +1690,11 @@ describe('next step under the top gaps', () => {
         assert.match(board.value, /Not certification or independent assurance\./);
         assert.match(board.value, /Next steps agreed \(owner and date\): $/);
         assert.doesNotMatch(board.value, /Synthetic organisation A|shared-preview-organisation|46\.4%/);
-        assert.equal(handoff.querySelectorAll('pre')[1].textContent, board.value);
+        const report = handoff.querySelector('.board-paper');
+        assert.match(report.textContent, /Synthetic organisation A/);
+        assert.match(report.textContent, /Author and role are not available/);
+        assert.match(report.textContent, /Agree who will take the first gap/);
+        assert.ok(report.querySelector('ol').children.length > 0);
         assert.equal(handoff.querySelectorAll('a').length, 0);
         controller.destroy();
     });

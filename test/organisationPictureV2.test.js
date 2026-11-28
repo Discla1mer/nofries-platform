@@ -193,7 +193,9 @@ describe('Overview with v1 and v2 results in one organisation', () => {
             print.mockImplementationOnce(() => {
                 const printed = board.querySelector('.picture-board-print');
                 expect(printed.classList.contains('picture-print-only')).toBe(true);
-                expect(printed.textContent).toBe(input.value);
+                expect(printed.textContent).toContain('Owner of ' + id);
+                expect(printed.textContent.toLowerCase()).toContain(title.toLowerCase());
+                expect(printed.textContent).not.toContain('Owner of ' + (id === 'assessment-v2' ? 'assessment-v1' : 'assessment-v2'));
             });
             press('Print board summary');
         }

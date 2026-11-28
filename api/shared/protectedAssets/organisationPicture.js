@@ -884,7 +884,7 @@
                     if (!live(token)) return boardBlock;
                     return questionnaire.boardSummaryBlock(node, button, win, detail, selectedMetadata(),
                         id + '-board-summary', status, boardBlock,
-                        (board, printed, copy, print) => boardPlanControls(handoff, boardBlock, board, printed, copy, print), displayedGaps, previousSubmission());
+                        (board, printed, copy, print) => boardPlanControls(handoff, boardBlock, board, printed, copy, print), displayedGaps, previousSubmission(), options.displayName, questionnaire.resultModel(detail, selectedMetadata(), organisationId));
                 };
                 if (options.boardExportGate) handoff.append(options.boardExportGate(() => boardExport(node('div', 'picture-board-summary'))));
                 else if (typeof options.readBoardPlan === 'function' && typeof options.openAction === 'function') {
@@ -921,17 +921,15 @@
             previousRead = { key, promise };
             return promise;
         }
-        function boardPlanControls(handoff, boardBlock, board, boardPrinted, boardCopy, boardPrint) {
+        function boardPlanControls(handoff, boardBlock, board, setText, boardCopy, boardPrint) {
             if (typeof options.readBoardPlan !== 'function' || typeof options.openAction !== 'function') return;
             const source = improvementSelection(), token = epoch, binding = sourceBinding();
             if (!source) return;
-            let baseText = board.value, lastExtra = '';
             const assignments = node('section', 'picture-board-actions');
             const note = node('p', 'dashboard-muted'); note.setAttribute('role', 'status');
             boardBlock.append(assignments, note);
             let attempt = 0;
             const current = () => currentSubmitted(token, binding, board);
-            const setText = extra => { lastExtra = extra; board.value = baseText + extra; boardPrinted.textContent = board.value; };
             const lock = busy => { boardCopy.disabled = busy; if (boardPrint) boardPrint.disabled = busy; };
             lock(true);
             async function checkAssignments() {
@@ -994,8 +992,6 @@
             handoff.addEventListener('toggle', checkAssignments);
             // A gate may release its content after the disclosure is already open.
             if (handoff.open) Promise.resolve().then(checkAssignments);
-            // #733: the summary text can gain its supersedes lines later; keep the saved owners after it.
-            return text => { baseText = text; setText(lastExtra); };
         }
         // Lead with the reported (lower) figure and explain both figures in plain words.
         function leadWithLowerBound(card, model) {
