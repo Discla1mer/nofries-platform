@@ -1491,7 +1491,7 @@ function submittedWith(optionFor) {
 function gapView(dom) {
     const section = dom.root.querySelector('.picture-top-gaps');
     return { section, heading: section.querySelector('h3').textContent,
-        items: section.querySelectorAll('li').map(item => ({ id: item.dataset.gapItem, title: item.querySelector('h4').textContent, text: item.textContent })) };
+        items: section.querySelectorAll('.picture-top-gap').map(item => ({ id: item.dataset.gapItem, title: item.querySelector('h4').textContent, text: item.textContent })) };
 }
 
 test('top three gaps put priority-tier controls first, then not-in-place before partial, above the metrics', async () => {
@@ -1634,7 +1634,10 @@ describe('next step under the top gaps', () => {
         assert.doesNotMatch(help.textContent, /opens the contact form/i);
         const pricing = Array.from(help.querySelectorAll('a')).find(item => item.href === '/pricing#pricing-pilot');
         assert.ok(pricing, 'the offer still links to the full pricing and inclusions');
-        assert.doesNotMatch(panel.textContent, /Synthetic organisation A|46\.4%|assessment-mixed/);
+        // The private, gated paper is the only part of this panel that names the organisation.
+        const paper = panel.querySelector('.board-paper');
+        assert.doesNotMatch(panel.textContent.replace(paper.textContent, ''), /Synthetic organisation A|46\.4%|assessment-mixed/);
+        panel.querySelectorAll('a').forEach(a => assert.doesNotMatch(a.href, /Synthetic|46\.4|assessment-mixed/));
         controller.destroy();
     });
     test('reads availability with a bare same-origin GET and sends nothing about the assessment', async () => {
