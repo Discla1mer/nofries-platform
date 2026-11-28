@@ -35,7 +35,8 @@ test('managed security and the assisted plan carry their agreed terms', () => {
 });
 
 test('the managed security offer has no launch, scarcity or offer-expiry language', () => {
-    expect(text).not.toMatch(/founding|pilot|start[- ]?up|launch|first three|limited|staggered|normally NZ|while places last|offer (?:ends|expires)/i);
+    // The footer names the company (No Fries Limited, #675); that is not scarcity wording.
+    expect(text.replace(/No Fries Limited/g, 'No Fries')).not.toMatch(/founding|pilot|start[- ]?up|launch|first three|limited|staggered|normally NZ|while places last|offer (?:ends|expires)/i);
 });
 
 test('the page offers no self-serve plan and makes no round-the-clock or certification claims', () => {
