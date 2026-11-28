@@ -442,12 +442,13 @@
             const header = node('header');
             header.append(node('p', 'eyebrow', 'No Fries'), node('h1', '', 'Cyber security summary for the board'));
             if (organisationName) header.append(node('strong', '', organisationName));
-            header.append(node('p', '', 'Assessment date: ' + localDate(detail.submission.submittedAt)));
+            const assessed = node('time', '', 'Assessment date: ' + localDate(detail.submission.submittedAt));
+            assessed.setAttribute('datetime', detail.submission.submittedAt); header.append(assessed);
             const ranked = node('ol');
             (gaps || []).forEach(gap => ranked.append(node('li', '', gap.title + ' (your answer: ' + gap.answer + ')')));
             paper.replaceChildren(header, node('h2', '', 'What needs attention first'),
                 ranked.children.length ? ranked : node('p', '', 'No priority gaps identified in this result.'));
-            if (score && score.lowerDisplay) paper.append(node('p', '', 'Reported in place: ' + score.lowerDisplay +
+            if (enoughAnswersToEstimate(score) && score.lowerDisplay) paper.append(node('p', '', 'Reported in place: ' + score.lowerDisplay +
                 (score.lowerDisplay !== score.upperDisplay ? ' (up to ' + score.upperDisplay + ' if outstanding answers are confirmed).' : '.')));
             paper.append(node('p', '', 'Scope: ' + detail.scopePopulation.description));
             if (earlier) {
