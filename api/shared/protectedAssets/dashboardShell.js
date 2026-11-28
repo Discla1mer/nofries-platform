@@ -794,7 +794,7 @@
                 }
                 cards.append(card);
             }
-            const terms = element('p', '', 'NZ$99 + GST per organisation per month or NZ$990 + GST per year (two months free). One plan includes both the NIST CSF 2.0 and ISO 27001 readiness self-assessments. There is no per-framework charge. Both are included at no extra charge during the NZ$1,250 + GST 90-day engagement. Advisers pay the same rate per client organisation and we invoice the adviser. We invoice manually, then our staff enable access. No payment card is needed.');
+            const terms = element('p', '', 'NZ$99 + GST per organisation per month or NZ$990 + GST per year (two months free). One plan includes both the NIST CSF 2.0 and ISO 27001 readiness self-assessments. There is no per-framework charge. Both are included at no extra charge during the NZ$1,250 + GST 90-day engagement. We invoice manually, then our staff enable access. No payment card is needed.');
             root.replaceChildren(heading, terms, cards);
         }
         function openFramework(root, ref, assessmentId) {
