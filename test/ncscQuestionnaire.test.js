@@ -3975,11 +3975,11 @@ describe('campaign Results next steps', () => {
     const cases = [
         // #657: one offer block, straight after the top gaps (after the payment step for scam).
         ['insurance', ['ncsc-questionnaire-answers', 'ncsc-board-next-step picture-summary', 'picture-top-gaps', 'picture-next-steps-help', 'ncsc-next-steps']],
-        ['supplier', ['ncsc-questionnaire-answers', 'picture-top-gaps', 'picture-next-steps-help', 'ncsc-next-steps', 'ncsc-board-next-step picture-summary']],
+        ['supplier', ['dashboard-button dashboard-button-secondary ncsc-summary-jump', 'ncsc-questionnaire-answers', 'picture-top-gaps', 'picture-next-steps-help', 'ncsc-next-steps', 'ncsc-board-next-step picture-summary']],
         ['board', ['ncsc-board-next-step picture-summary', 'picture-top-gaps', 'picture-next-steps-help', 'ncsc-next-steps', 'ncsc-questionnaire-answers']],
-        ['scam', ['ncsc-payment-next-step', 'picture-next-steps-help', 'picture-top-gaps', 'ncsc-next-steps', 'ncsc-board-next-step picture-summary', 'ncsc-questionnaire-answers']],
-        ['', ['picture-top-gaps', 'picture-next-steps-help', 'ncsc-next-steps', 'ncsc-board-next-step picture-summary', 'ncsc-questionnaire-answers']],
-        ['unrecognised', ['picture-top-gaps', 'picture-next-steps-help', 'ncsc-next-steps', 'ncsc-board-next-step picture-summary', 'ncsc-questionnaire-answers']]
+        ['scam', ['dashboard-button dashboard-button-secondary ncsc-summary-jump', 'ncsc-payment-next-step', 'picture-next-steps-help', 'picture-top-gaps', 'ncsc-next-steps', 'ncsc-board-next-step picture-summary', 'ncsc-questionnaire-answers']],
+        ['', ['dashboard-button dashboard-button-secondary ncsc-summary-jump', 'picture-top-gaps', 'picture-next-steps-help', 'ncsc-next-steps', 'ncsc-board-next-step picture-summary', 'ncsc-questionnaire-answers']],
+        ['unrecognised', ['dashboard-button dashboard-button-secondary ncsc-summary-jump', 'picture-top-gaps', 'picture-next-steps-help', 'ncsc-next-steps', 'ncsc-board-next-step picture-summary', 'ncsc-questionnaire-answers']]
     ];
     const campaignDom = campaign => {
         const dom = interactiveDom();
@@ -3998,6 +3998,10 @@ describe('campaign Results next steps', () => {
             expect(panel.children.slice(1, 1 + order.length).map(node => node.className)).toEqual(order);
             expect(control(ui, 'Copy summary')).toBeTruthy(); expect(control(ui, 'Print these results')).toBeTruthy();
             expect(control(ui, 'Copy answers')).toBeTruthy(); expect(control(ui, 'Print answers')).toBeTruthy();
+            // #698: where the summary is below the gaps, one control near the top focuses its heading.
+            const jump = panel.querySelector('.ncsc-summary-jump');
+            expect(Boolean(jump)).toBe(!['board', 'insurance'].includes(campaign));
+            if (jump) { jump.click(); expect(ui.document.activeElement).toBe(byId(ui, 'ncsc-board-summary-heading')); }
             expect(h.calls.every(call => call.init.method === 'GET')).toBe(true);
             expect([...h.versions.values()]).toEqual(before);
             expect(dom.window.sessionStorage.getItem).toHaveBeenCalledWith('nofries-enquiry-campaign');

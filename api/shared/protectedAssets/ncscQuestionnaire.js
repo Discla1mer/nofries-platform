@@ -2033,6 +2033,15 @@
             panel.append(node('h2', '', 'Assessment results'));
             content.append(panel);
             const campaign = resultsCampaign(win);
+            // #698: the summary sits below the gaps unless the visit came from a board
+            // or insurance campaign, several screens
+            // down on a phone. One control near the top takes keyboard and screen
+            // reader users straight to its heading.
+            if (results && campaign !== 'board' && campaign !== 'insurance') {
+                panel.append(button('Go to the board or insurer summary', function () {
+                    focusTarget(panel.querySelector('[id="ncsc-board-summary-heading"]'));
+                }, 'dashboard-button dashboard-button-secondary ncsc-summary-jump'));
+            }
             const boardExportGate = options.boardExportGate || (content => content());
             const gated = typeof options.detailsGate === 'function' ? options.detailsGate : content => content();
             // Keep the same gated anchor and keyboard focus while one shared probe settles.
@@ -2061,7 +2070,8 @@
             function appendBoardSummary() {
                 const section = node('section', 'ncsc-board-next-step picture-summary');
                 const copied = node('p', 'dashboard-muted'); copied.setAttribute('role', 'status');
-                section.append(node('h3', '', 'Summary for your board or insurer'),
+                const heading = node('h3', '', 'Summary for your board or insurer'); heading.id = 'ncsc-board-summary-heading';
+                section.append(heading,
                     boardExportGate(() => boardSummaryBlock(node, button, win, acknowledged, metadata, 'ncsc-board-summary', copied, undefined, undefined, topGaps(results, metadata), previousSubmission(), options.displayName, results)), copied);
                 if (campaign === 'board' && topGaps(results, metadata, 1).length) {
                     section.append(node('p', '', 'Use a reported gap to agree a next action, an owner and a date with your board.'),
