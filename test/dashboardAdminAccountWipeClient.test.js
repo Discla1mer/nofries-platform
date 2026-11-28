@@ -7,7 +7,7 @@ const source = fs.readFileSync(require.resolve('../api/shared/protectedAssets/ac
 const html = fs.readFileSync(require.resolve('../app/operator.html'), 'utf8');
 const flush = async () => { for (let i = 0; i < 5; i += 1) await new Promise(resolve => setImmediate(resolve)); };
 const EMAIL = 'synthetic@example.invalid';
-const IDS = ['Panel', 'Form', 'Reset', 'Delete', 'Email', 'Word', 'WordHint', 'Approve', 'Apply', 'Status', 'Summary', 'ResumeEmail', 'Resume'];
+const IDS = ['Panel', 'Form', 'Reset', 'Delete', 'Email', 'Word', 'WordHint', 'Reason', 'Approve', 'Apply', 'Status', 'Summary', 'ResumeEmail', 'Resume'];
 
 function fixture({ approveReply = null, executeReply = null, selected = { email: EMAIL } } = {}) {
     const { document, window } = createDom(), elements = {};
@@ -27,7 +27,7 @@ function fixture({ approveReply = null, executeReply = null, selected = { email:
         return { status, headers: { get: () => 'application/json' }, json: async () => value };
     });
     vm.runInNewContext(source, { document, window, fetch, AbortController, Date });
-    const type = (email, word) => { elements.Email.value = email; elements.Word.value = word; };
+    const type = (email, word, why = 'test_account') => { elements.Email.value = email; elements.Word.value = word; elements.Reason.value = why; };
     const submit = async () => { for (const fn of elements.Form.events.submit) fn({ preventDefault() {} }); await flush(); };
     const applyNow = async () => { elements.Apply.click(); await flush(); };
     const bodies = () => fetch.mock.calls.filter(([url]) => url.endsWith('/accounts/lookup')).map(([, options]) => JSON.parse(options.body));
@@ -58,7 +58,7 @@ test('delete: approve with typed email and word, then apply once, through the lo
     expect(f.elements.Apply.disabled).toBe(false); expect(f.elements.Status.textContent).toMatch(/Approved: delete/);
     await f.applyNow();
     expect(f.bodies()).toEqual([
-        { wipe: { step: 'approve', action: 'delete', email: EMAIL, confirmEmail: EMAIL, confirmWord: 'DELETE' } },
+        { wipe: { step: 'approve', action: 'delete', email: EMAIL, confirmEmail: EMAIL, confirmWord: 'DELETE', reason: 'test_account' } },
         { wipe: { step: 'execute', approvalId: 'synthetic-approval', email: EMAIL } }]);
     expect(f.fetch.mock.calls.every(([url]) => !/[@?]/.test(url))).toBe(true);
     expect(f.elements.Status.textContent).toMatch(/Delete complete .*Database: removed; Stored records: removed; Sign-in user: removed/);
@@ -140,7 +140,7 @@ test.each([['delete', 'DELETE'], ['reset', 'RESET']])('%s works by email without
     f.type(EMAIL, wordValue); await f.submit(); await f.applyNow();
     // Only the email goes to the server; no identity reference comes from the page.
     expect(f.bodies()).toEqual([
-        { wipe: { step: 'approve', action: chosen, email: EMAIL, confirmEmail: EMAIL, confirmWord: wordValue } },
+        { wipe: { step: 'approve', action: chosen, email: EMAIL, confirmEmail: EMAIL, confirmWord: wordValue, reason: 'test_account' } },
         { wipe: { step: 'execute', approvalId: 'synthetic-approval', email: EMAIL } }]);
     expect(f.elements.Status.textContent).toMatch(chosen === 'reset' ? /Reset complete/ : /Delete complete/);
 });
@@ -167,27 +167,27 @@ test('the script is served with entry.js only while the flag is on', async () =>
 describe('one-click perform for the account list', () => {
     test('approves with the confirmed email and word, then applies that single-use approval once', async () => {
         const f = fixture({ selected: null });
-        const result = await f.window.nofriesAccountWipe.perform('delete', EMAIL);
+        const result = await f.window.nofriesAccountWipe.perform('delete', EMAIL, undefined, 'test_account');
         expect(f.bodies()).toEqual([
-            { wipe: { step: 'approve', action: 'delete', email: EMAIL, confirmEmail: EMAIL, confirmWord: 'DELETE' } },
+            { wipe: { step: 'approve', action: 'delete', email: EMAIL, confirmEmail: EMAIL, confirmWord: 'DELETE', reason: 'test_account' } },
             { wipe: { step: 'execute', approvalId: 'synthetic-approval', email: EMAIL } }]);
         expect(result.done).toBe(true); expect(result.text).toContain('Delete complete for ' + EMAIL);
         for (const [url] of f.fetch.mock.calls) expect(url).not.toMatch(/@|%40|\?/);
     });
     test('a refused approval is explained and nothing is applied', async () => {
         const f = fixture({ selected: null, approveReply: { status: 409, value: { code: 'account_wipe_account_not_found' } } });
-        const result = await f.window.nofriesAccountWipe.perform('delete', EMAIL);
+        const result = await f.window.nofriesAccountWipe.perform('delete', EMAIL, undefined, 'test_account');
         expect(result).toEqual({ done: false, text: 'No account was found for this email.' });
         expect(f.bodies()).toHaveLength(1);
     });
     test('the shared request budget is explained in plain words', async () => {
         const f = fixture({ selected: null, approveReply: { status: 429, value: { code: 'dashboard_admin_account_lookup_429' } } });
-        expect((await f.window.nofriesAccountWipe.perform('reset', EMAIL)).text).toContain('Wait a minute');
+        expect((await f.window.nofriesAccountWipe.perform('reset', EMAIL, undefined, 'test_account')).text).toContain('Wait a minute');
     });
     test('a partial delete says what is left and that Delete finishes it', async () => {
         const f = fixture({ selected: null, executeReply: { status: 200, value: { action: 'delete', outcome: 'partial', code: 'account_wipe_identity_forbidden',
             stages: { database: 'done', storage: 'done', identity: 'failed' }, counts: { databaseRows: 1, blobs: 0, versions: 0 }, recorded: true } } });
-        const result = await f.window.nofriesAccountWipe.perform('delete', EMAIL);
+        const result = await f.window.nofriesAccountWipe.perform('delete', EMAIL, undefined, 'test_account');
         expect(result.done).toBe(false);
         expect(result.text).toContain('Sign-in user: failed'); expect(result.text).toContain('Choose Delete again');
     });
@@ -195,7 +195,7 @@ describe('one-click perform for the account list', () => {
         const f = fixture({ selected: null });
         f.window.dispatch('pagehide');
         expect(f.window.nofriesAccountWipe.available()).toBe(false);
-        expect((await f.window.nofriesAccountWipe.perform('delete', EMAIL)).done).toBe(false);
+        expect((await f.window.nofriesAccountWipe.perform('delete', EMAIL, undefined, 'test_account')).done).toBe(false);
         expect(f.bodies()).toHaveLength(0);
         expect(await f.window.nofriesAccountWipe.perform('purge', EMAIL)).toEqual({ done: false, text: 'Reset and delete are unavailable.' });
     });
@@ -210,7 +210,7 @@ test('leaving the page while an approval is pending never sends the execute step
         if (input?.wipe?.step === 'approve') await new Promise(resolve => { release = resolve; });
         return original(url, options);
     });
-    const running = f.window.nofriesAccountWipe.perform('delete', EMAIL);
+    const running = f.window.nofriesAccountWipe.perform('delete', EMAIL, undefined, 'test_account');
     while (!release) await new Promise(resolve => setImmediate(resolve));
     f.window.dispatch('pagehide');
     release();
@@ -222,18 +222,53 @@ test('leaving the page while an approval is pending never sends the execute step
 test('a partial delete whose outcome record failed keeps the keep-a-note warning', async () => {
     const f = fixture({ selected: null, executeReply: { status: 200, value: { action: 'delete', outcome: 'partial', code: 'account_wipe_identity_forbidden',
         stages: { database: 'done', storage: 'done', identity: 'failed' }, counts: { databaseRows: 1, blobs: 0, versions: 0 }, recorded: false } } });
-    expect((await f.window.nofriesAccountWipe.perform('delete', EMAIL)).text).toContain('could not be stored; keep a note');
+    expect((await f.window.nofriesAccountWipe.perform('delete', EMAIL, undefined, 'test_account')).text).toContain('could not be stored; keep a note');
 });
 
 test('perform sends the list row store, only when it is legacy or external', async () => {
     const f = fixture({ selected: null });
-    await f.window.nofriesAccountWipe.perform('delete', EMAIL, 'external');
-    await f.window.nofriesAccountWipe.perform('delete', EMAIL, 'bogus');
+    await f.window.nofriesAccountWipe.perform('delete', EMAIL, 'external', 'test_account');
+    await f.window.nofriesAccountWipe.perform('delete', EMAIL, 'bogus', 'test_account');
     const approvals = f.bodies().filter(body => body.wipe.step === 'approve');
     expect(approvals[0].wipe.store).toBe('external'); expect(Object.hasOwn(approvals[1].wipe, 'store')).toBe(false);
 });
 test('an unfinished signup delete says no sign-in user was recorded', async () => {
     const f = fixture({ selected: null, executeReply: { status: 200, value: { action: 'delete', outcome: 'succeeded', code: null,
         stages: { database: 'absent', storage: 'done', identity: 'none_recorded' }, counts: { databaseRows: 0, blobs: 4, versions: 0 }, recorded: true } } });
-    expect((await f.window.nofriesAccountWipe.perform('delete', EMAIL)).text).toContain('Sign-in user: none recorded (signup never finished)');
+    expect((await f.window.nofriesAccountWipe.perform('delete', EMAIL, undefined, 'test_account')).text).toContain('Sign-in user: none recorded (signup never finished)');
+});
+
+describe('recorded reason', () => {
+    test('the panel offers exactly the three fixed reasons, required, with no free-text field', () => {
+        const select = html.match(/<select id="accountWipeReason"[^>]*>([\s\S]*?)<\/select>/);
+        expect(select[0]).toMatch(/\brequired\b/);
+        expect([...select[1].matchAll(/<option value="([^"]*)">([^<]*)<\/option>/g)].map(m => [m[1], m[2]])).toEqual([
+            ['', 'Choose a reason'], ['test_account', 'Test account'], ['customer_request', 'The customer asked'], ['retention_rule', 'Published retention rule']]);
+        expect(html).not.toMatch(/accountWipeReason[^>]*textarea|id="accountWipeReasonText"/);
+    });
+    test('the panel will not approve without a reason, and sends the chosen code', async () => {
+        const f = fixture();
+        f.elements.Delete.click(); expect(f.elements.Reason.disabled).toBe(false);
+        f.type(EMAIL, 'DELETE', ''); await f.submit();
+        expect(f.bodies()).toHaveLength(0); expect(f.elements.Status.textContent).toBe('Choose a reason before approving.');
+        f.type(EMAIL, 'DELETE', 'free text'); await f.submit(); expect(f.bodies()).toHaveLength(0);
+        f.type(EMAIL, 'DELETE', 'retention_rule'); await f.submit();
+        expect(f.bodies()).toEqual([{ wipe: { step: 'approve', action: 'delete', email: EMAIL, confirmEmail: EMAIL, confirmWord: 'DELETE', reason: 'retention_rule' } }]);
+    });
+    test('choosing another action clears the reason', () => {
+        const f = fixture();
+        f.elements.Delete.click(); f.elements.Reason.value = 'customer_request'; f.elements.Reset.click();
+        expect(f.elements.Reason.value).toBe('');
+    });
+    test.each([[undefined], [''], ['other'], ['The customer asked']])('perform refuses reason %p without any request', async why => {
+        const f = fixture({ selected: null });
+        expect(await f.window.nofriesAccountWipe.perform('delete', EMAIL, 'external', why)).toEqual({ done: false, text: 'Choose a reason before resetting or deleting. Nothing was changed.' });
+        expect(f.fetch).not.toHaveBeenCalledWith('/api/dashboard-admin/accounts/lookup', expect.anything());
+    });
+    test('perform sends each fixed code as given', async () => {
+        const f = fixture({ selected: null });
+        for (const why of ['test_account', 'customer_request', 'retention_rule']) await f.window.nofriesAccountWipe.perform('reset', EMAIL, undefined, why);
+        expect(f.bodies().filter(body => body.wipe.step === 'approve').map(body => body.wipe.reason)).toEqual(['test_account', 'customer_request', 'retention_rule']);
+        expect(f.window.nofriesAccountWipe.reasons).toEqual({ test_account: 'Test account', customer_request: 'The customer asked', retention_rule: 'Published retention rule' });
+    });
 });

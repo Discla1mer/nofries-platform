@@ -44,6 +44,15 @@
             <p>Every customer account, newest first. Open shows its dashboard access. Reset and Delete ask you to confirm first and cannot be undone.</p>
             <button id="accountListLoad" type="button">Refresh list</button>
             <p id="accountListStatus" role="status" aria-live="polite" aria-atomic="true"></p>
+            <div id="accountListBulk" class="account-bulk" hidden>
+                <label for="accountListFilter">Filter</label>
+                <input id="accountListFilter" type="search" maxlength="254" autocomplete="off" spellcheck="false" placeholder="Email or organisation">
+                <label class="account-bulk-all"><input id="accountListSelectAll" type="checkbox"> Select all shown</label>
+                <span id="accountListSelected" role="status" aria-live="polite"></span>
+                <button id="accountListBulkReset" type="button" disabled>Reset selected</button>
+                <button id="accountListBulkDelete" type="button" class="danger" disabled>Delete selected</button>
+                <button id="accountListBulkStop" type="button" hidden>Stop after this one</button>
+            </div>
             <div id="accountListResults" role="region" aria-label="Signups" tabindex="0" aria-busy="false"></div>
         </section>
         <section id="contactRequestsPanel" aria-labelledby="contactRequestsHeading" hidden>
@@ -103,6 +112,7 @@
                 <button id="accountWipeDelete" type="button" aria-pressed="false" disabled>Delete</button>
                 <label>Type the account email <input id="accountWipeEmail" type="email" required maxlength="254" autocomplete="off" spellcheck="false" disabled></label>
                 <label>Type <span id="accountWipeWordHint">RESET or DELETE</span> <input id="accountWipeWord" type="text" required maxlength="6" autocomplete="off" spellcheck="false" disabled></label>
+                <label>Reason <select id="accountWipeReason" required disabled><option value="">Choose a reason</option><option value="test_account">Test account</option><option value="customer_request">The customer asked</option><option value="retention_rule">Published retention rule</option></select></label>
                 <button id="accountWipeApprove" type="submit" disabled>Approve</button>
                 <button id="accountWipeApply" type="button" disabled>Apply</button>
             </form>

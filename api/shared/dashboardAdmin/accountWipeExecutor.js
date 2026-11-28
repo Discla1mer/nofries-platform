@@ -32,6 +32,9 @@ const WORDS = Object.freeze({ reset: 'RESET', delete: 'DELETE' });
 const KINDS = new Set(['legacy_starter', 'external_starter']);
 // The store a staff admin picked from the account list, when an email is in both.
 const STORES = Object.freeze({ legacy: 'legacy_starter', external: 'external_starter' });
+// Why the staff admin is resetting or deleting: one fixed code, recorded in the
+// approval record. Never free text, so no customer detail enters the audit trail.
+const REASONS = Object.freeze(['test_account', 'customer_request', 'retention_rule']);
 // Of the overall run deadline, this much is kept for the outcome record, so
 // the whole apply (attempt record, stages, outcome record) ends by the deadline.
 const OUTCOME_RESERVE_MS = 3000;
@@ -196,8 +199,9 @@ function createAccountWipeExecutor({ sources, repository, identity = null, ensur
         };
     }
 
-    async function approve({ actor, sessionSha256, action, email, confirmEmail, confirmWord, store = null }, signal) {
+    async function approve({ actor, sessionSha256, action, email, confirmEmail, confirmWord, reason, store = null }, signal) {
         if (!Object.hasOwn(WORDS, action ?? '')) fail('account_wipe_input_invalid');
+        if (!REASONS.includes(reason)) fail('account_wipe_input_invalid');
         if (store !== null && !Object.hasOwn(STORES, store)) fail('account_wipe_input_invalid');
         const storeKind = store === null ? null : STORES[store];
         const actorSha256 = actorOf(actor, sessionSha256), target = normaliseEmail(email);
@@ -221,7 +225,7 @@ function createAccountWipeExecutor({ sources, repository, identity = null, ensur
         if (approvals.size >= MAX_APPROVALS) fail('account_wipe_busy');
         const approvalId = newId(), expiresAt = now() + APPROVAL_MS;
         // Self-issued by the acting staff admin, as for suspend and restore (see docs/staff-admin.md, Accepted risk).
-        if (!await record(approvalId, 'approval', { action, actorSha256, targetSha256, outcome: 'approved', expiresAt: new Date(expiresAt).toISOString(),
+        if (!await record(approvalId, 'approval', { action, reason, actorSha256, targetSha256, outcome: 'approved', expiresAt: new Date(expiresAt).toISOString(),
             approvalAuthority: APPROVAL_AUTHORITY }))
             fail('account_wipe_audit_unavailable');
         // Bound to the account seen now, not just the email: an account deleted and
@@ -387,4 +391,4 @@ function createAccountWipeExecutor({ sources, repository, identity = null, ensur
         refused: ({ actor, step, email = null, code }) => refusal(step === 'approve' ? 'approve' : 'execute', actor, email, { code }) });
 }
 
-module.exports = { createAccountWipeExecutor, APPROVAL_MS, WORDS, OUTCOME_RESERVE_MS, OUTCOME_MIN_MS };
+module.exports = { createAccountWipeExecutor, APPROVAL_MS, WORDS, REASONS, OUTCOME_RESERVE_MS, OUTCOME_MIN_MS };

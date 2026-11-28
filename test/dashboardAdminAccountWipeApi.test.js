@@ -38,7 +38,7 @@ function harness(options = {}, requestBudgetMs = 10000) {
             NOFRIES_ADMIN_SUBJECTS: admin, NOFRIES_DASHBOARD_ADMIN_ACCOUNT_LOOKUP: 'true', NOFRIES_DASHBOARD_ADMIN_ACCOUNT_WIPE: flag }, requestBudgetMs });
     return { handler, records, lookupAudit, repository, storage, remover, service };
 }
-const approve = (action, extra = {}) => ({ wipe: { step: 'approve', action, email: EMAIL, confirmEmail: EMAIL, confirmWord: action.toUpperCase(), ...extra } });
+const approve = (action, extra = {}) => ({ wipe: { step: 'approve', action, email: EMAIL, confirmEmail: EMAIL, confirmWord: action.toUpperCase(), reason: 'test_account', ...extra } });
 const execute = approvalId => ({ wipe: { step: 'execute', approvalId, email: EMAIL } });
 
 test('approve then apply deletes through the lookup route, with no lookup record and the native gate checked', async () => {
@@ -268,4 +268,39 @@ test('the optional store reaches the executor; any other extra key or store valu
     const h = harness();
     expect(await h.handler.handle(wire(approve('delete', { store: 'both' })), 'accounts/lookup')).toMatchObject({ status: 400, body: { code: 'account_wipe_input_invalid' } });
     expect(h.storage.delete).not.toHaveBeenCalled();
+});
+
+describe('recorded reason', () => {
+    test.each(['test_account', 'customer_request', 'retention_rule'])('%s is recorded in the approval record and reaches the executor', async reason => {
+        const h = harness();
+        const approved = await h.handler.handle(wire(approve('reset', { reason })), 'accounts/lookup');
+        expect(approved.status).toBe(200);
+        expect(h.records).toEqual([expect.objectContaining({ phase: 'approval', action: 'reset', reason, outcome: 'approved' })]);
+    });
+
+    test.each([
+        ['missing', (() => { const { reason, ...rest } = approve('delete').wipe; return { wipe: rest }; })()],
+        ['unknown code', approve('delete', { reason: 'other' })],
+        ['free text', approve('delete', { reason: 'Customer phoned on Tuesday' })],
+        ['not a string', approve('delete', { reason: ['test_account'] })],
+        ['null', approve('delete', { reason: null })]
+    ])('a %s reason is refused with 400, recorded as a refused approval, and nothing changes', async (_name, input) => {
+        const h = harness();
+        expect(await h.handler.handle(wire(input), 'accounts/lookup')).toMatchObject({ status: 400, body: { code: 'account_wipe_input_invalid' } });
+        expect(h.records).toEqual([expect.objectContaining({ phase: 'approval_refused', code: 'account_wipe_input_invalid', outcome: 'refused', targetSha256: 'd'.repeat(64) })]);
+        expect(JSON.stringify(h.records)).not.toMatch(/Tuesday|reason/);
+        expect(h.storage.inventory).not.toHaveBeenCalled(); expect(h.repository.delete).not.toHaveBeenCalled();
+    });
+
+    test('the route passes the reason to the executor and keeps exact keys', async () => {
+        const approveSpy = jest.fn(async () => ({ approvalId: 'x', action: 'delete', approvalExpiresAt: new Date(Date.now() + 60000).toISOString() }));
+        const refused = jest.fn();
+        const route = createAccountWipeRoute({ approve: approveSpy, execute: jest.fn(), refused });
+        const call = body => route(body, { subjectKey: STAFF }, { headers: { cookie: COOKIE } }, new AbortController().signal);
+        expect((await call(approve('delete', { reason: 'retention_rule', store: 'legacy' }).wipe)).status).toBe(200);
+        expect(approveSpy.mock.calls[0][0]).toMatchObject({ reason: 'retention_rule', store: 'legacy' });
+        expect(await call(approve('delete', { note: 'x' }).wipe)).toEqual({ status: 400, body: { code: 'account_wipe_input_invalid' } });
+        expect(refused).toHaveBeenCalledWith(expect.objectContaining({ step: 'approve', code: 'account_wipe_input_invalid' }));
+        expect(approveSpy).toHaveBeenCalledTimes(1);
+    });
 });

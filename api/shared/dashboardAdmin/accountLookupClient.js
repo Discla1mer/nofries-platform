@@ -15,7 +15,7 @@
     const text = value => value === null || value === undefined || value === '' ? '—' : String(value);
     // Each cell carries its column name so narrow screens can show rows as labelled cards (operator.css).
     const labelled = (cell, label) => { cell.setAttribute('data-label', label); return cell; };
-    const LIST_COLUMNS = ['Email', 'Type', 'Account formed', 'Signup', 'Sign-in record', 'Organisations', 'Plan', 'Actions'];
+    const LIST_COLUMNS = ['Select', 'Email', 'Type', 'Account formed', 'Signup', 'Sign-in record', 'Organisations', 'Plan', 'Actions'];
     function select(row) { window.nofriesAccountSelection = row; window.dispatchEvent(new Event('nofries-account-selection')); }
     function reset() {
         active?.abort(); active = null; select(null); result.replaceChildren(); button.disabled = false; result.setAttribute('aria-busy', 'false');
@@ -173,35 +173,140 @@
     const dialogBody = Object.assign(document.createElement('p'), { id: 'accountConfirmBody' });
     const dialogYes = Object.assign(document.createElement('button'), { type: 'button' });
     const dialogNo = Object.assign(document.createElement('button'), { type: 'button', textContent: 'Cancel' });
-    dialog.append(dialogTitle, dialogBody, dialogYes, dialogNo);
+    // Every reset or delete records why, as one fixed code (never free text).
+    const REASONS = [['test_account', 'Test account'], ['customer_request', 'The customer asked'], ['retention_rule', 'Published retention rule']];
+    const dialogReason = Object.assign(document.createElement('select'), { required: true, value: '' });
+    [['', 'Choose a reason'], ...REASONS].forEach(([value, label]) => dialogReason.append(Object.assign(document.createElement('option'), { value, textContent: label })));
+    const dialogReasonLabel = document.createElement('label');
+    dialogReasonLabel.append(Object.assign(document.createElement('span'), { textContent: 'Reason ' }), dialogReason);
+    // Several accounts at once also need the action word typed.
+    const dialogWord = Object.assign(document.createElement('input'), { type: 'text', maxLength: 6, autocomplete: 'off', spellcheck: false, value: '' });
+    const dialogWordLabel = document.createElement('label'); dialogWordLabel.hidden = true;
+    const dialogWordText = document.createElement('span'); dialogWordLabel.append(dialogWordText, dialogWord);
+    dialog.append(dialogTitle, dialogBody, dialogWordLabel, dialogReasonLabel, dialogYes, dialogNo);
     listPanel.append(dialog);
-    let pending = null;
-    function close() { pending = null; if (dialog.open) dialog.close(); }
+    let pending = null, requiredWord = '';
+    const wordTyped = () => !requiredWord || String(dialogWord.value).trim().toUpperCase() === requiredWord;
+    const reasonChosen = () => REASONS.some(([value]) => value === dialogReason.value);
+    const confirmable = () => wordTyped() && reasonChosen();
+    const gate = () => { dialogYes.disabled = !confirmable(); };
+    dialogWord.addEventListener('input', gate);
+    dialogReason.addEventListener('change', gate); dialogReason.addEventListener('input', gate);
+    // Every way out of the dialog (Cancel, Escape, Yes) clears the typed word
+    // and the reason, so a later confirmation never inherits them.
+    function forget() { pending = null; requiredWord = ''; dialogWord.value = ''; dialogWordLabel.hidden = true; dialogReason.value = ''; dialogYes.disabled = true; }
+    function close() { forget(); if (dialog.open) dialog.close(); }
     dialogNo.addEventListener('click', close);
-    dialog.addEventListener('cancel', () => { pending = null; });
-    dialogYes.addEventListener('click', () => { const next = pending; close(); if (next) next(); });
+    dialog.addEventListener('cancel', forget);
+    dialogYes.addEventListener('click', () => { if (!confirmable()) return; const next = pending, why = dialogReason.value; close(); if (next) next(why); });
     function ask(action, row, cells) {
         if (working || !wipe()) return;
+        forget();
         const words = CONFIRM[action];
         dialogTitle.textContent = words.title; dialogBody.textContent = words.body(row.email); dialogYes.textContent = words.yes;
         dialogYes.className = action === 'delete' ? 'danger' : '';
-        pending = () => act(action, row, cells);
+        pending = why => act(action, row, cells, why);
         dialog.showModal(); dialogNo.focus();
     }
-    async function act(action, row, cells) {
+    async function act(action, row, cells, why) {
         const service = wipe();
         if (working || !service) return;
         working = true; setRowButtons(true); cells.status.textContent = CONFIRM[action].working;
         try {
-            const result = await service.perform(action, row.email, row.provider);
+            const result = await service.perform(action, row.email, row.provider, why);
             cells.status.textContent = result.text;
-            if (result.done && action === 'delete') { cells.row.classList.add('account-deleted'); cells.buttons.forEach(button => { button.hidden = true; button.dataset.gone = 'true'; }); }
+            if (result.done && action === 'delete') {
+                cells.row.classList.add('account-deleted'); cells.buttons.forEach(button => { button.hidden = true; button.dataset.gone = 'true'; });
+                // A deleted row can no longer be ticked or swept up by "Select all shown".
+                const entry = entries.find(item => item.cells === cells); if (entry) { entry.gone = true; entry.box.checked = false; }
+            }
         } finally { working = false; setRowButtons(false); }
     }
-    function setRowButtons(disabled) { listResult.querySelectorAll('[data-wipe]').forEach(button => { button.disabled = disabled; }); }
-    function showWipe() { const on = Boolean(wipe()); listResult.querySelectorAll('[data-wipe]').forEach(button => { if (!button.dataset.gone) button.hidden = !on; }); }
+    function setRowButtons(disabled) { listResult.querySelectorAll('[data-wipe]').forEach(button => { button.disabled = disabled; }); refresh(); }
+    function showWipe() { const on = Boolean(wipe()); listResult.querySelectorAll('[data-wipe]').forEach(button => { if (!button.dataset.gone) button.hidden = !on; }); refresh(); }
     window.addEventListener('nofries-account-wipe', () => { if (!wipe()) close(); showWipe(); });
+
+    // Several accounts at once: tick rows (or filter, then "Select all shown")
+    // and reset or delete them behind one typed confirmation. Each account still
+    // goes through the same approve-then-apply request as its row buttons, one
+    // at a time, and the run stops at the first account that does not complete.
+    const bulk = document.getElementById('accountListBulk');
+    const bulkFilter = document.getElementById('accountListFilter'), bulkAll = document.getElementById('accountListSelectAll');
+    const bulkCount = document.getElementById('accountListSelected'), bulkStop = document.getElementById('accountListBulkStop');
+    const bulkButtons = { reset: document.getElementById('accountListBulkReset'), delete: document.getElementById('accountListBulkDelete') };
+    const BULK = { reset: { word: 'RESET', verb: 'Reset', doing: 'Resetting', past: 'Reset',
+        effect: 'Clears their assessments, evidence and improvement plans. Sign-in, email and organisations are kept.' },
+    delete: { word: 'DELETE', verb: 'Delete', doing: 'Deleting', past: 'Deleted',
+        effect: 'Removes each account, its organisations and all their data, and its sign-in.' } };
+    // One run handles at most this many accounts (each is two wipe calls, inside
+    // the server's separate 60-a-minute wipe budget).
+    const BULK_MAX = 25, OVER_CAP = `Select up to ${BULK_MAX} accounts at a time.`;
+    let entries = [], stopRequested = false;
+    const plural = n => `${n} account${n === 1 ? '' : 's'}`;
+    const chosen = () => entries.filter(entry => entry.box.checked && !entry.gone && !entry.tr.hidden);
+    function refresh() {
+        if (!bulk) return;
+        const on = Boolean(wipe()) && entries.length > 0, picked = chosen().length;
+        bulk.hidden = !on;
+        bulkCount.textContent = picked > BULK_MAX ? `${picked} selected. ${OVER_CAP}` : picked ? `${picked} selected` : '';
+        Object.values(bulkButtons).forEach(button => { button.disabled = working || !picked || picked > BULK_MAX; });
+        entries.forEach(entry => { entry.box.disabled = working || entry.gone; });
+        bulkAll.disabled = working; bulkFilter.disabled = working;
+    }
+    function applyFilter() {
+        const needle = String(bulkFilter.value || '').trim().toLowerCase();
+        entries.forEach(entry => { entry.tr.hidden = Boolean(needle) && !entry.search.includes(needle); });
+        bulkAll.checked = false; refresh();
+    }
+    function askBulk(action) {
+        const list = chosen(), words = BULK[action];
+        if (working || !wipe() || !list.length || list.length > BULK_MAX) return;
+        forget();
+        const names = list.slice(0, 5).map(entry => entry.row.email).join(', ') + (list.length > 5 ? ` and ${list.length - 5} more` : '');
+        dialogTitle.textContent = `${words.verb} ${plural(list.length)}?`;
+        dialogBody.textContent = `${names}. ${words.effect} This cannot be undone.`;
+        dialogWordText.textContent = `Type ${words.word} to confirm `; dialogWord.value = ''; dialogWordLabel.hidden = false;
+        requiredWord = words.word; gate();
+        dialogYes.textContent = `Yes, ${action} ${plural(list.length)}`; dialogYes.className = action === 'delete' ? 'danger' : '';
+        pending = why => runBulk(action, list, why);
+        dialog.showModal(); dialogWord.focus?.();
+    }
+    async function runBulk(action, list, why) {
+        const service = wipe(), words = BULK[action];
+        if (working || !service) return;
+        if (list.length > BULK_MAX) { listStatus.textContent = `${OVER_CAP} Nothing was changed.`; return; }
+        working = true; stopRequested = false; setRowButtons(true); bulkStop.hidden = false;
+        let completed = 0, stoppedAt = null;
+        try {
+            for (const [index, entry] of list.entries()) {
+                if (stopRequested || !wipe()) break;
+                listStatus.textContent = `${words.doing} ${index + 1} of ${list.length}… keep this page open.`;
+                entry.cells.status.textContent = CONFIRM[action].working;
+                const result = await service.perform(action, entry.row.email, entry.row.provider, why);
+                entry.cells.status.textContent = result.text;
+                if (!result.done) { stoppedAt = entry.row.email; break; }
+                completed++; entry.box.checked = false;
+                if (action === 'delete') {
+                    entry.gone = true; entry.tr.classList.add('account-deleted');
+                    entry.cells.buttons.forEach(button => { button.hidden = true; button.dataset.gone = 'true'; });
+                }
+            }
+        } finally {
+            const left = list.length - completed;
+            listStatus.textContent = `${words.past} ${plural(completed)}.` + (stoppedAt ? ` Stopped at ${stoppedAt}: see its row. ${left} not done.`
+                : left ? ` Stopped. ${left} not done.` : '');
+            working = false; bulkStop.hidden = true; bulkAll.checked = false; setRowButtons(false);
+        }
+    }
+    if (bulk) {
+        bulkFilter.addEventListener('input', applyFilter);
+        bulkAll.addEventListener('change', () => { entries.forEach(entry => { if (!entry.gone && !entry.tr.hidden) entry.box.checked = bulkAll.checked; }); refresh(); });
+        bulkStop.addEventListener('click', () => { stopRequested = true; bulkStop.hidden = true; });
+        Object.keys(bulkButtons).forEach(action => bulkButtons[action].addEventListener('click', () => askBulk(action)));
+    }
     function listReset() {
+        entries = []; if (bulk) { bulkFilter.value = ''; bulkAll.checked = false; }
+        refresh();
         listActive?.abort(); listActive = null; close(); listResult.replaceChildren(); listStatus.textContent = '';
         listButton.disabled = false; listResult.setAttribute('aria-busy', 'false');
     }
@@ -234,9 +339,13 @@
             const body = table.createTBody();
             value.rows.forEach(row => {
                 const tr = body.insertRow();
-                if (!row.readable) { const cell = tr.insertCell(); cell.colSpan = 8; cell.textContent = 'An account record could not be read.'; return; }
+                if (!row.readable) { const cell = tr.insertCell(); cell.colSpan = LIST_COLUMNS.length; cell.textContent = 'An account record could not be read.'; return; }
                 let column = 0;
                 const cell = () => labelled(tr.insertCell(), LIST_COLUMNS[column++]);
+                const box = Object.assign(document.createElement('input'), { type: 'checkbox', checked: false });
+                box.setAttribute('aria-label', `Select ${row.email}`);
+                box.addEventListener('change', refresh);
+                Object.assign(cell(), { className: 'account-select' }).append(box);
                 Object.assign(cell(), { className: 'account-email', textContent: row.email });
                 cell().textContent = row.accountType === 'consultant' ? 'Consultant' : 'Company';
                 Object.assign(cell(), { className: 'account-date', textContent: date(row.createdAt) });
@@ -267,7 +376,10 @@
                     cells.buttons.push(button); actions.append(button);
                 });
                 actions.append(rowStatus);
+                entries.push({ row, tr, box, cells, gone: false,
+                    search: [row.email, ...row.organisations.map(org => org.name)].join(' ').toLowerCase() });
             });
+            refresh();
             listResult.append(table);
             listStatus.textContent = `${value.rows.length} account${value.rows.length === 1 ? '' : 's'}` +
                 (value.truncated ? ', capped at 200. Older accounts are not shown.' : '.');

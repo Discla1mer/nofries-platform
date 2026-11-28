@@ -19,6 +19,7 @@ const STATUS = Object.freeze({ account_wipe_input_invalid: 400, account_wipe_con
     account_wipe_audit_unavailable: 503, account_wipe_unavailable: 503,
     // Configuration or dependency faults, not refusals about the account.
     account_wipe_role_unavailable: 503, account_wipe_identity_not_configured: 503, account_wipe_identity_unavailable: 503 });
+const APPROVE_KEYS = Object.freeze(['step', 'action', 'email', 'confirmEmail', 'confirmWord', 'reason']);
 const invalid = () => { const error = new Error('account_wipe_input_invalid'); error.code = 'account_wipe_input_invalid'; throw error; };
 const exact = (value, keys) => value && typeof value === 'object' && !Array.isArray(value) &&
     Object.keys(value).sort().join(',') === [...keys].sort().join(',');
@@ -42,13 +43,14 @@ function createAccountWipeRoute(executor) {
             const sessionSha256 = sessionDigest(request?.headers?.cookie);
             if (!sessionSha256) { const error = new Error(); error.code = 'account_wipe_approval_invalid'; throw error; }
             let body;
+            // "reason" is required: one fixed code (the executor checks it).
             // "store" (legacy or external) is optional: it names which account to
             // act on when the email is in both customer stores.
-            if ((exact(input, ['step', 'action', 'email', 'confirmEmail', 'confirmWord']) || exact(input, ['step', 'action', 'email', 'confirmEmail', 'confirmWord', 'store'])) &&
-                input.step === 'approve') {
+            if ((exact(input, APPROVE_KEYS) || exact(input, [...APPROVE_KEYS, 'store'])) && input.step === 'approve') {
                 local = false;
                 body = await executor.approve({ actor, sessionSha256, action: input.action, email: input.email,
-                    confirmEmail: input.confirmEmail, confirmWord: input.confirmWord, ...(Object.hasOwn(input, 'store') ? { store: input.store } : {}) }, signal);
+                    confirmEmail: input.confirmEmail, confirmWord: input.confirmWord, reason: input.reason,
+                    ...(Object.hasOwn(input, 'store') ? { store: input.store } : {}) }, signal);
             } else if (exact(input, ['step', 'approvalId', 'email']) && input.step === 'execute') {
                 // The deadline also bounds the database transaction from inside, so
                 // nothing commits after the reply's budget (see accountWipeRepository).

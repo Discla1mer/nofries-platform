@@ -5,6 +5,10 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { apiSecurityHeaders } = require('../securityHeaders');
 const { assertExactSameOriginRequest } = require('../browserAuth');
+const LOOKUP_BUDGET = 10, WIPE_BUDGET = 60;
+// Bodies read a minute, of any shape: room for both budgets plus as many
+// refused calls again, so refused reads cannot hold up a bulk run.
+const BODY_CEILING = 2 * (LOOKUP_BUDGET + WIPE_BUDGET);
 const fail = statusCode => { throw Object.assign(new Error(), { statusCode }); };
 
 // The durable audit writer is mandatory: a lookup whose record cannot be
@@ -26,7 +30,7 @@ const fail = statusCode => { throw Object.assign(new Error(), { statusCode }); }
 // script is not served.
 function createAccountLookup({ read, list = null, wipe = null, contactRequests = null, audit, targetDigest, readJson, env, now = Date.now }) {
     if ([read, audit, targetDigest].some(value => typeof value !== 'function') || [list, wipe, contactRequests].some(value => value !== null && typeof value !== 'function')) throw new Error('dashboard_admin_configuration_invalid');
-    let windowStart = 0, requests = 0;
+    let windowStart = 0, requests = 0, wipeRequests = 0, bodies = 0;
     return async (request, route, authorise, signal) => {
         let status = 503, body, actor = null, actorHash = null, targetSha256 = null, category = 'dashboard_admin_account_lookup';
         const headers = apiSecurityHeaders({ 'Content-Type': 'application/json; charset=utf-8' });
@@ -42,12 +46,24 @@ function createAccountLookup({ read, list = null, wipe = null, contactRequests =
                 if (contactRequests) body += '\n' + fs.readFileSync(path.join(__dirname, 'contactRequestsClient.js'), 'utf8');
             } else {
                 try { assertExactSameOriginRequest(request, env); } catch (_) { fail(403); }
-                // Process-wide budget, so changing email or staff identity cannot
-                // bypass the cap. The host also applies its per-client API limit.
-                if (now() - windowStart >= 60000) { windowStart = now(); requests = 0; }
-                if (++requests > 10) { headers['Retry-After'] = '60'; fail(429); }
-                const input = await readJson(request, signal);
-                if (input && typeof input === 'object' && !Array.isArray(input) && Object.keys(input).length === 1 && Object.hasOwn(input, 'wipe')) {
+                // Process-wide budgets, so changing email or staff identity cannot
+                // bypass a cap. The host also applies its per-client API limit.
+                // Reads (lookup, list, contact requests) get 10 a minute; reset and
+                // delete calls (a body whose only key is "wipe") get their own 60,
+                // so a bulk run of 25 accounts (approve + apply each) fits and does
+                // not use up the reads. Telling the two apart needs the body, so
+                // before any body is read a request is refused when both budgets
+                // are used up or BODY_CEILING bodies were read this minute; the
+                // body is read under readJson's size limits.
+                if (now() - windowStart >= 60000) { windowStart = now(); requests = 0; wipeRequests = 0; bodies = 0; }
+                const limited = () => { headers['Retry-After'] = '60'; fail(429); };
+                if (++bodies > BODY_CEILING || requests >= LOOKUP_BUDGET && wipeRequests >= WIPE_BUDGET) limited();
+                let input;
+                try { input = await readJson(request, signal); }
+                catch (error) { if (++requests > LOOKUP_BUDGET) limited(); throw error; }
+                const isWipe = input && typeof input === 'object' && !Array.isArray(input) && Object.keys(input).length === 1 && Object.hasOwn(input, 'wipe');
+                if (isWipe ? ++wipeRequests > WIPE_BUDGET : ++requests > LOOKUP_BUDGET) limited();
+                if (isWipe) {
                     if (!wipe) fail(404);
                     if ((await authorise()).subjectKey !== actor.subjectKey) fail(403);
                     // Once a wipe has started its outcome is reported as it is; a
@@ -110,4 +126,4 @@ function createAccountLookup({ read, list = null, wipe = null, contactRequests =
         return { status, body, headers, isRaw: status === 200 && route === 'accounts/app.js' };
     };
 }
-module.exports = { createAccountLookup };
+module.exports = { createAccountLookup, LOOKUP_BUDGET, WIPE_BUDGET };
