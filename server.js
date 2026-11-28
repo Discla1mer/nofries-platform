@@ -1041,7 +1041,7 @@ app.get(['/mssp', '/mssp/', '/workspace', '/workspace/', '/app', '/app/', '/app/
     res.redirect(302, '/scoping');
 });
 
-app.get(['/sample-report.html', '/share', '/share/*splat', '/share.html', '/about.html', '/About.html'], (req, res) => {
+app.get(['/sample-report.html', '/share', '/share/*splat', '/share.html'], (req, res) => {
     res.redirect(302, '/');
 });
 
@@ -1232,6 +1232,10 @@ function mountPublicAssets(application) {
     rootRoutes.push(['/pricing', 'pricing.html']);
     rootRoutes.push(['/offer', 'offer.html']);
     rootRoutes.push(['/invoice-scams', 'invoice-scams.html']);
+    // #675: short addresses for the trust pages.
+    rootRoutes.push(['/about', 'about.html']);
+    rootRoutes.push(['/security', 'security.html']);
+    rootRoutes.push(['/faq', 'faq.html']);
     rootRoutes.forEach(([route, fileName]) => {
         application.get(route, (req, res) => {
             if (fileName.endsWith('.html')) {
