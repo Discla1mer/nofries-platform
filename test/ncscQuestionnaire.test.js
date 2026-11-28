@@ -1867,7 +1867,7 @@ describe('questionnaire form accessibility', () => {
         } finally { ui.controller.destroy(); }
     });
 
-    test.each([['wide', false, true], ['narrow', true, false]])('on %s screens the choices follow the question and help is one disclosure (F1-R09)', async (_label, narrow, openByDefault) => {
+    test.each([['wide', false, false], ['narrow', true, false]])('on %s screens the choices follow the question and help is one closed disclosure (F1-R09, #720)', async (_label, narrow, openByDefault) => {
         const h = await backend(), dom = interactiveDom(); const queries = [];
         dom.window.matchMedia = query => { queries.push(query); return { matches: narrow && query === '(max-width: 30rem)' }; };
         const ui = await createInUi(h, { dom });
@@ -1886,7 +1886,6 @@ describe('questionnaire form accessibility', () => {
             expect(layout.children[1].contains(help)).toBe(true);
             expect(layout.children[1].contains(byId(ui, 'ncsc-glossary'))).toBe(true);
             expect(Boolean(help.open)).toBe(openByDefault);
-            expect(queries).toContain('(max-width: 30rem)');
             // No content is lost: the example, checks, framework wording and every answer meaning remain.
             expect(help.textContent).toContain('Example: ' + question.smallBusiness.example);
             question.smallBusiness.checks.forEach(text => expect(help.textContent).toContain(text));

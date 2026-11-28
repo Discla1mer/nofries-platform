@@ -2285,7 +2285,8 @@
             }
             // The choices follow the question directly. The example, checks, full
             // framework wording and answer meanings sit in one native disclosure
-            // after them: open by default on wider screens, closed on narrow ones.
+            // after them, closed by default at every width (#720) so the choices and
+            // Next stay in view; the person's own open or closed choice is remembered.
             const help = node('details', 'ncsc-question-help'); help.id = 'ncsc-question-help-' + question.id;
             help.append(node('summary', '', 'Help with this question'));
             if (question.smallBusiness) {
@@ -2302,8 +2303,7 @@
                 item.append(node('strong', '', option.label + ': '), node('span', '', ANSWER_GUIDANCE[id])); meaningList.append(item);
             });
             meanings.append(meaningList); help.append(meanings);
-            const narrow = !!(win && typeof win.matchMedia === 'function' && win.matchMedia('(max-width: 30rem)').matches);
-            help.open = questionHelpOpen.has(question.id) ? questionHelpOpen.get(question.id) : !sealed && !narrow;
+            help.open = questionHelpOpen.has(question.id) ? questionHelpOpen.get(question.id) : false;
             help.addEventListener('toggle', function () { if (live(renderedEpoch)) questionHelpOpen.set(question.id, help.open); });
             if (acknowledged.status === 'submitted') fieldset.append(node('p', 'dashboard-badge', 'Your answer: ' + (optionById.get(entry.value.optionId)?.label || 'Not answered')));
             const tiles = node('div', 'ncsc-answer-tiles'); fieldset.append(tiles);
