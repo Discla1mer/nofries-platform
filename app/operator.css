@@ -338,3 +338,4 @@ input, select, textarea { background: #fff; }
 .account-confirm label[hidden] { display: none; }
 .account-confirm label input { display: block; width: 100%; min-height: 44px; margin-top: 6px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; font: inherit; text-transform: uppercase; }
 .account-confirm button:disabled { opacity: .5; cursor: not-allowed; }
+.account-confirm label select { display: block; width: 100%; min-height: 44px; margin-top: 6px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; font: inherit; }

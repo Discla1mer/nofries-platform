@@ -173,37 +173,47 @@
     const dialogBody = Object.assign(document.createElement('p'), { id: 'accountConfirmBody' });
     const dialogYes = Object.assign(document.createElement('button'), { type: 'button' });
     const dialogNo = Object.assign(document.createElement('button'), { type: 'button', textContent: 'Cancel' });
+    // Every reset or delete records why, as one fixed code (never free text).
+    const REASONS = [['test_account', 'Test account'], ['customer_request', 'The customer asked'], ['retention_rule', 'Published retention rule']];
+    const dialogReason = Object.assign(document.createElement('select'), { required: true, value: '' });
+    [['', 'Choose a reason'], ...REASONS].forEach(([value, label]) => dialogReason.append(Object.assign(document.createElement('option'), { value, textContent: label })));
+    const dialogReasonLabel = document.createElement('label');
+    dialogReasonLabel.append(Object.assign(document.createElement('span'), { textContent: 'Reason ' }), dialogReason);
     // Several accounts at once also need the action word typed.
     const dialogWord = Object.assign(document.createElement('input'), { type: 'text', maxLength: 6, autocomplete: 'off', spellcheck: false, value: '' });
     const dialogWordLabel = document.createElement('label'); dialogWordLabel.hidden = true;
     const dialogWordText = document.createElement('span'); dialogWordLabel.append(dialogWordText, dialogWord);
-    dialog.append(dialogTitle, dialogBody, dialogWordLabel, dialogYes, dialogNo);
+    dialog.append(dialogTitle, dialogBody, dialogWordLabel, dialogReasonLabel, dialogYes, dialogNo);
     listPanel.append(dialog);
     let pending = null, requiredWord = '';
     const wordTyped = () => !requiredWord || String(dialogWord.value).trim().toUpperCase() === requiredWord;
-    dialogWord.addEventListener('input', () => { dialogYes.disabled = !wordTyped(); });
-    // Every way out of the dialog (Cancel, Escape, Yes) clears the typed word,
-    // so a later single-account confirmation never inherits it.
-    function forget() { pending = null; requiredWord = ''; dialogWord.value = ''; dialogWordLabel.hidden = true; dialogYes.disabled = false; }
+    const reasonChosen = () => REASONS.some(([value]) => value === dialogReason.value);
+    const confirmable = () => wordTyped() && reasonChosen();
+    const gate = () => { dialogYes.disabled = !confirmable(); };
+    dialogWord.addEventListener('input', gate);
+    dialogReason.addEventListener('change', gate); dialogReason.addEventListener('input', gate);
+    // Every way out of the dialog (Cancel, Escape, Yes) clears the typed word
+    // and the reason, so a later confirmation never inherits them.
+    function forget() { pending = null; requiredWord = ''; dialogWord.value = ''; dialogWordLabel.hidden = true; dialogReason.value = ''; dialogYes.disabled = true; }
     function close() { forget(); if (dialog.open) dialog.close(); }
     dialogNo.addEventListener('click', close);
     dialog.addEventListener('cancel', forget);
-    dialogYes.addEventListener('click', () => { if (!wordTyped()) return; const next = pending; close(); if (next) next(); });
+    dialogYes.addEventListener('click', () => { if (!confirmable()) return; const next = pending, why = dialogReason.value; close(); if (next) next(why); });
     function ask(action, row, cells) {
         if (working || !wipe()) return;
         forget();
         const words = CONFIRM[action];
         dialogTitle.textContent = words.title; dialogBody.textContent = words.body(row.email); dialogYes.textContent = words.yes;
         dialogYes.className = action === 'delete' ? 'danger' : '';
-        pending = () => act(action, row, cells);
+        pending = why => act(action, row, cells, why);
         dialog.showModal(); dialogNo.focus();
     }
-    async function act(action, row, cells) {
+    async function act(action, row, cells, why) {
         const service = wipe();
         if (working || !service) return;
         working = true; setRowButtons(true); cells.status.textContent = CONFIRM[action].working;
         try {
-            const result = await service.perform(action, row.email, row.provider);
+            const result = await service.perform(action, row.email, row.provider, why);
             cells.status.textContent = result.text;
             if (result.done && action === 'delete') {
                 cells.row.classList.add('account-deleted'); cells.buttons.forEach(button => { button.hidden = true; button.dataset.gone = 'true'; });
@@ -228,6 +238,9 @@
         effect: 'Clears their assessments, evidence and improvement plans. Sign-in, email and organisations are kept.' },
     delete: { word: 'DELETE', verb: 'Delete', doing: 'Deleting', past: 'Deleted',
         effect: 'Removes each account, its organisations and all their data, and its sign-in.' } };
+    // One run handles at most this many accounts (each is two wipe calls, inside
+    // the server's separate 60-a-minute wipe budget).
+    const BULK_MAX = 25, OVER_CAP = `Select up to ${BULK_MAX} accounts at a time.`;
     let entries = [], stopRequested = false;
     const plural = n => `${n} account${n === 1 ? '' : 's'}`;
     const chosen = () => entries.filter(entry => entry.box.checked && !entry.gone && !entry.tr.hidden);
@@ -235,8 +248,8 @@
         if (!bulk) return;
         const on = Boolean(wipe()) && entries.length > 0, picked = chosen().length;
         bulk.hidden = !on;
-        bulkCount.textContent = picked ? `${picked} selected` : '';
-        Object.values(bulkButtons).forEach(button => { button.disabled = working || !picked; });
+        bulkCount.textContent = picked > BULK_MAX ? `${picked} selected. ${OVER_CAP}` : picked ? `${picked} selected` : '';
+        Object.values(bulkButtons).forEach(button => { button.disabled = working || !picked || picked > BULK_MAX; });
         entries.forEach(entry => { entry.box.disabled = working || entry.gone; });
         bulkAll.disabled = working; bulkFilter.disabled = working;
     }
@@ -247,19 +260,21 @@
     }
     function askBulk(action) {
         const list = chosen(), words = BULK[action];
-        if (working || !wipe() || !list.length) return;
+        if (working || !wipe() || !list.length || list.length > BULK_MAX) return;
+        forget();
         const names = list.slice(0, 5).map(entry => entry.row.email).join(', ') + (list.length > 5 ? ` and ${list.length - 5} more` : '');
         dialogTitle.textContent = `${words.verb} ${plural(list.length)}?`;
         dialogBody.textContent = `${names}. ${words.effect} This cannot be undone.`;
         dialogWordText.textContent = `Type ${words.word} to confirm `; dialogWord.value = ''; dialogWordLabel.hidden = false;
-        requiredWord = words.word; dialogYes.disabled = true;
+        requiredWord = words.word; gate();
         dialogYes.textContent = `Yes, ${action} ${plural(list.length)}`; dialogYes.className = action === 'delete' ? 'danger' : '';
-        pending = () => runBulk(action, list);
+        pending = why => runBulk(action, list, why);
         dialog.showModal(); dialogWord.focus?.();
     }
-    async function runBulk(action, list) {
+    async function runBulk(action, list, why) {
         const service = wipe(), words = BULK[action];
         if (working || !service) return;
+        if (list.length > BULK_MAX) { listStatus.textContent = `${OVER_CAP} Nothing was changed.`; return; }
         working = true; stopRequested = false; setRowButtons(true); bulkStop.hidden = false;
         let completed = 0, stoppedAt = null;
         try {
@@ -267,7 +282,7 @@
                 if (stopRequested || !wipe()) break;
                 listStatus.textContent = `${words.doing} ${index + 1} of ${list.length}… keep this page open.`;
                 entry.cells.status.textContent = CONFIRM[action].working;
-                const result = await service.perform(action, entry.row.email, entry.row.provider);
+                const result = await service.perform(action, entry.row.email, entry.row.provider, why);
                 entry.cells.status.textContent = result.text;
                 if (!result.done) { stoppedAt = entry.row.email; break; }
                 completed++; entry.box.checked = false;

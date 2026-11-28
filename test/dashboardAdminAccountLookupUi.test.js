@@ -155,6 +155,8 @@ describe('customer accounts list: opens by itself, with Reset and Delete on ever
         const button = name => nodes.get('accountListResults').querySelectorAll('button').find(item => item.textContent === name);
         return { fetch, perform, timers, nodes, dialog, button };
     }
+    const pick = (h, why) => { const select = h.dialog.querySelector('select'); select.value = why; [...select.events.change].forEach(fn => fn({ currentTarget: select })); };
+    const yesButton = (h, label) => h.dialog.querySelectorAll('button').find(item => item.textContent === label);
     const autoload = async h => { const [fn, ms] = h.timers.find(([, ms]) => ms === 0); expect(ms).toBe(0); await fn(); };
 
     describe('several accounts at once', () => {
@@ -163,11 +165,13 @@ describe('customer accounts list: opens by itself, with Reset and Delete on ever
         const fire = (node, name) => [...node.events[name]].forEach(fn => fn({ currentTarget: node, preventDefault() {} }));
         const boxes = h => h.nodes.get('accountListResults').querySelectorAll('input');
         const tick = (h, index) => { boxes(h)[index].checked = true; fire(boxes(h)[index], 'change'); };
-        const confirm = async (h, word, label) => {
+        const confirm = async (h, word, label, why = 'test_account') => {
             const typed = h.dialog.querySelector('input'), yes = h.dialog.querySelectorAll('button').find(item => item.textContent === label);
             expect(yes.disabled).toBe(true);
             yes.click(); await new Promise(resolve => setImmediate(resolve)); expect(h.perform).not.toHaveBeenCalled();
-            typed.value = word; fire(typed, 'input'); expect(yes.disabled).toBe(false);
+            typed.value = word; fire(typed, 'input'); expect(yes.disabled).toBe(true);
+            yes.click(); await new Promise(resolve => setImmediate(resolve)); expect(h.perform).not.toHaveBeenCalled();
+            pick(h, why); expect(yes.disabled).toBe(false);
             yes.click(); for (let i = 0; i < 10; i++) await new Promise(resolve => setImmediate(resolve));
         };
 
@@ -193,7 +197,7 @@ describe('customer accounts list: opens by itself, with Reset and Delete on ever
             expect(h.dialog.textContent).toContain('a@test.example, b@test.example');
             expect(h.dialog.textContent).not.toContain('real@customer.example');
             await confirm(h, ' delete ', 'Yes, delete 2 accounts');
-            expect(h.perform.mock.calls).toEqual([['delete', 'a@test.example', 'external'], ['delete', 'b@test.example', 'external']]);
+            expect(h.perform.mock.calls).toEqual([['delete', 'a@test.example', 'external', 'test_account'], ['delete', 'b@test.example', 'external', 'test_account']]);
             expect(h.nodes.get('accountListResults').querySelectorAll('.account-deleted')).toHaveLength(2);
             expect(h.nodes.get('accountListStatus').textContent).toBe('Deleted 2 accounts.');
             expect(h.nodes.get('accountListBulkDelete').disabled).toBe(true);
@@ -227,24 +231,72 @@ describe('customer accounts list: opens by itself, with Reset and Delete on ever
         test('Escape on a bulk confirmation leaves nothing behind for a single-account confirmation', async () => {
             const h = setup(true, { done: true, text: 'Reset complete.' }, three); await autoload(h);
             tick(h, 0); h.nodes.get('accountListBulkDelete').click();
-            const typed = h.dialog.querySelector('input'); typed.value = 'DEL';
+            const typed = h.dialog.querySelector('input'); typed.value = 'DEL'; pick(h, 'retention_rule');
             fire(h.dialog, 'cancel'); h.dialog.open = false;
             h.button('Reset').click();
             const yes = h.dialog.querySelectorAll('button').find(item => item.textContent === 'Yes, reset');
-            expect(typed.value).toBe(''); expect(h.dialog.querySelector('label').hidden).toBe(true); expect(yes.disabled).toBe(false);
+            expect(typed.value).toBe(''); expect(h.dialog.querySelector('label').hidden).toBe(true);
+            expect(h.dialog.querySelector('select').value).toBe(''); expect(yes.disabled).toBe(true);
+            pick(h, 'customer_request'); expect(yes.disabled).toBe(false);
             yes.click(); await new Promise(resolve => setImmediate(resolve));
-            expect(h.perform).toHaveBeenCalledWith('reset', 'a@test.example', 'external');
+            expect(h.perform).toHaveBeenCalledWith('reset', 'a@test.example', 'external', 'customer_request');
         });
 
         test('an account deleted from its own row is left out of "Select all shown" and later bulk runs', async () => {
             const h = setup(true, { done: true, text: 'Delete complete.' }, three); await autoload(h);
-            h.button('Delete').click();
+            h.button('Delete').click(); pick(h, 'test_account');
             h.dialog.querySelectorAll('button').find(item => item.textContent === 'Yes, delete').click();
             await new Promise(resolve => setImmediate(resolve));
             const all = h.nodes.get('accountListSelectAll'); all.checked = true; fire(all, 'change');
             expect(boxes(h).map(box => box.checked)).toEqual([false, true, true]);
             expect(boxes(h)[0].disabled).toBe(true);
             expect(h.nodes.get('accountListSelected').textContent).toBe('2 selected');
+        });
+
+        test('the confirmation offers exactly the three fixed reasons and no free-text field', async () => {
+            const h = setup(true, undefined, three); await autoload(h);
+            h.button('Reset').click();
+            expect(h.dialog.querySelector('select').querySelectorAll('option').map(option => [option.value, option.textContent])).toEqual([
+                ['', 'Choose a reason'], ['test_account', 'Test account'], ['customer_request', 'The customer asked'], ['retention_rule', 'Published retention rule']]);
+            expect(h.dialog.querySelectorAll('textarea')).toHaveLength(0);
+            expect(h.dialog.querySelectorAll('input')).toHaveLength(1);
+        });
+
+        test('a reason that is not one of the codes keeps Yes disabled', async () => {
+            const h = setup(true, undefined, three); await autoload(h);
+            h.button('Delete').click(); pick(h, 'something else');
+            expect(yesButton(h, 'Yes, delete').disabled).toBe(true);
+            yesButton(h, 'Yes, delete').click(); await new Promise(resolve => setImmediate(resolve));
+            expect(h.perform).not.toHaveBeenCalled();
+        });
+
+        test('more than 25 selected disables the bulk actions with a clear message', async () => {
+            const many = { rows: Array.from({ length: 26 }, (_, i) => account(`user${i}@test.example`, `Org ${i}`)), truncated: false };
+            const h = setup(true, async (_action, email) => ({ done: true, text: `Reset complete for ${email}.` }), many); await autoload(h);
+            const all = h.nodes.get('accountListSelectAll'); all.checked = true; fire(all, 'change');
+            expect(h.nodes.get('accountListSelected').textContent).toBe('26 selected. Select up to 25 accounts at a time.');
+            expect(h.nodes.get('accountListBulkReset').disabled).toBe(true); expect(h.nodes.get('accountListBulkDelete').disabled).toBe(true);
+            h.nodes.get('accountListBulkReset').click();
+            expect(h.dialog.showModal).not.toHaveBeenCalled();
+            boxes(h)[25].checked = false; fire(boxes(h)[25], 'change');
+            expect(h.nodes.get('accountListSelected').textContent).toBe('25 selected');
+            expect(h.nodes.get('accountListBulkReset').disabled).toBe(false);
+            h.nodes.get('accountListBulkReset').click();
+            await confirm(h, 'RESET', 'Yes, reset 25 accounts', 'retention_rule');
+            expect(h.perform).toHaveBeenCalledTimes(25);
+            expect(h.perform.mock.calls.every(call => call[0] === 'reset' && call[3] === 'retention_rule')).toBe(true);
+            expect(h.nodes.get('accountListStatus').textContent).toBe('Reset 25 accounts.');
+        });
+
+        test('a stale enabled button still cannot start a run of more than 25', async () => {
+            const many = { rows: Array.from({ length: 26 }, (_, i) => account(`user${i}@test.example`, `Org ${i}`)), truncated: false };
+            const h = setup(true, undefined, many); await autoload(h);
+            for (let i = 0; i < 25; i++) tick(h, i);
+            expect(h.nodes.get('accountListBulkDelete').disabled).toBe(false);
+            // Ticked without its change event, so the button has not been refreshed.
+            boxes(h)[25].checked = true;
+            h.nodes.get('accountListBulkDelete').click();
+            expect(h.dialog.showModal).not.toHaveBeenCalled(); expect(h.perform).not.toHaveBeenCalled();
         });
 
         test('with reset and delete switched off there is nothing to select with', async () => {
@@ -274,9 +326,12 @@ describe('customer accounts list: opens by itself, with Reset and Delete on ever
         h.dialog.querySelectorAll('button').find(item => item.textContent === 'Cancel').click();
         expect(h.dialog.open).toBe(false); expect(h.perform).not.toHaveBeenCalled();
         h.button('Delete').click();
+        expect(yesButton(h, 'Yes, delete').disabled).toBe(true);
+        yesButton(h, 'Yes, delete').click(); await new Promise(resolve => setImmediate(resolve)); expect(h.perform).not.toHaveBeenCalled();
+        pick(h, 'customer_request'); expect(yesButton(h, 'Yes, delete').disabled).toBe(false);
         h.dialog.querySelectorAll('button').find(item => item.textContent === 'Yes, delete').click();
         await new Promise(resolve => setImmediate(resolve));
-        expect(h.perform).toHaveBeenCalledWith('delete', 'row@example.test', 'external');
+        expect(h.perform).toHaveBeenCalledWith('delete', 'row@example.test', 'external', 'customer_request');
         expect(h.perform).toHaveBeenCalledTimes(1);
         expect(h.nodes.get('accountListResults').textContent).toContain('Delete complete for row@example.test.');
         expect(h.nodes.get('accountListResults').querySelectorAll('.account-deleted')).toHaveLength(1);
@@ -289,9 +344,10 @@ describe('customer accounts list: opens by itself, with Reset and Delete on ever
         h.button('Reset').click();
         expect(h.dialog.textContent).toContain('Reset this account?');
         expect(h.dialog.textContent).toContain('Sign-in, email and organisations are kept');
+        pick(h, 'test_account');
         h.dialog.querySelectorAll('button').find(item => item.textContent === 'Yes, reset').click();
         await new Promise(resolve => setImmediate(resolve));
-        expect(h.perform).toHaveBeenCalledWith('reset', 'row@example.test', 'external');
+        expect(h.perform).toHaveBeenCalledWith('reset', 'row@example.test', 'external', 'test_account');
         expect(h.button('Delete').hidden).toBe(false);
     });
 
